@@ -1,0 +1,10 @@
+{
+  "extends": "@fwd-stack/tsconfig/strictest",
+  "compilerOptions": {
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "types": ["node"],
+    "noEmit": true
+  },
+  "include": ["src"]
+}

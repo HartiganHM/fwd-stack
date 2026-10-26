@@ -1,0 +1,34 @@
+{
+  "name": "@fwd-stack/eslint-config",
+  "version": "0.1.0",
+  "description": "Shared ESLint flat configs: base, node, next.",
+  "type": "module",
+  "files": [
+    "*.mjs"
+  ],
+  "exports": {
+    "./base": "./base.mjs",
+    "./node": "./node.mjs",
+    "./next": "./next.mjs"
+  },
+  "dependencies": {
+    "@eslint/js": "^9.39.5",
+    "globals": "^16.0.0",
+    "typescript-eslint": "^8.66.0"
+  },
+  "peerDependencies": {
+    "eslint": "^9.0.0",
+    "eslint-config-next": ">=16.0.0"
+  },
+  "peerDependenciesMeta": {
+    "eslint-config-next": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5",
+    "eslint-config-next": "^16.4.3",
+    "typescript": "^5.9.0",
+    "next": "^16.4.1"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "name": "fwd-stack",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared stack for Featherweight projects: configs, CI workflows and the version baseline.",
+  "type": "module",
+  "packageManager": "pnpm@10.33.2",
+  "engines": {
+    "node": "^24.0.0",
+    "pnpm": "^10.0.0"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "typecheck": "pnpm --filter ./tests/fixtures/* typecheck",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "prettier": "@fwd-stack/prettier-config",
+  "devDependencies": {
+    "@fwd-stack/eslint-config": "workspace:*",
+    "@fwd-stack/prettier-config": "workspace:*",
+    "eslint": "^9.39.5",
+    "prettier": "3.9.6",
+    "typescript": "^5.9.0"
+  }
+}

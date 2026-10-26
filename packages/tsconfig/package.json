@@ -1,0 +1,18 @@
+{
+  "name": "@fwd-stack/tsconfig",
+  "version": "0.1.0",
+  "description": "Shared TypeScript configs: base, strictest, nextjs, node.",
+  "files": [
+    "*.json"
+  ],
+  "exports": {
+    "./base": "./base.json",
+    "./base.json": "./base.json",
+    "./strictest": "./strictest.json",
+    "./strictest.json": "./strictest.json",
+    "./nextjs": "./nextjs.json",
+    "./nextjs.json": "./nextjs.json",
+    "./node": "./node.json",
+    "./node.json": "./node.json"
+  }
+}
