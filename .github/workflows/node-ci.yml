@@ -19,14 +19,14 @@ on:
         description: Space-separated package.json scripts to run, in order.
         type: string
         default: typecheck lint test build
-      node-version-file:
-        description: File that pins the Node version.
-        type: string
-        default: .nvmrc
       working-directory:
-        description: Directory holding the package.json to run against.
+        description: Directory holding the package.json and pnpm-lock.yaml to run against, relative to the repository root.
         type: string
         default: .
+      node-version-file:
+        description: File that pins the Node version, relative to working-directory.
+        type: string
+        default: .nvmrc
       build-env:
         description: KEY=VALUE lines exported before the scripts run (stub values only, never secrets).
         type: string
@@ -48,12 +48,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # `working-directory` reaches only `run` steps, so the setup actions are given the nested
+      # project's files explicitly.
       - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: ${{ inputs.working-directory }}/package.json
 
       - uses: actions/setup-node@v7
         with:
-          node-version-file: ${{ inputs.node-version-file }}
+          node-version-file: ${{ inputs.working-directory }}/${{ inputs.node-version-file }}
           cache: pnpm
+          cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
