@@ -1,5 +1,5 @@
-import globals from 'globals'
-import base from './base.mjs'
+import globals from 'globals';
+import base from './base.mjs';
 
 /** @type {import('eslint').Linter.Config[]} */
 export default [
@@ -10,4 +10,4 @@ export default [
       'no-console': ['warn', { allow: ['warn', 'error'] }],
     },
   },
-]
+];

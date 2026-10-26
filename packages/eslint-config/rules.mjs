@@ -9,7 +9,7 @@ export const sharedTypeScriptRules = {
   ],
   '@typescript-eslint/no-explicit-any': 'warn',
   '@typescript-eslint/consistent-type-imports': 'error',
-}
+};
 
 export const sharedIgnores = {
   ignores: [
@@ -21,4 +21,4 @@ export const sharedIgnores = {
     '.worktrees/**',
     '.claude/worktrees/**',
   ],
-}
+};

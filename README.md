@@ -39,9 +39,9 @@ TypeScript:
 ESLint (a project's own rules go after the shared ones):
 
 ```js
-import next from '@fwd-stack/eslint-config/next'
+import next from '@fwd-stack/eslint-config/next';
 
-export default [...next, { rules: {/* project guards */} }]
+export default [...next, { rules: {/* project guards */} }];
 ```
 
 Prettier, in `package.json`: `"prettier": "@fwd-stack/prettier-config"`.

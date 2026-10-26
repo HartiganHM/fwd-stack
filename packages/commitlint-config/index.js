@@ -8,4 +8,4 @@ export default {
     ],
     'subject-max-length': [2, 'always', 100],
   },
-}
+};
