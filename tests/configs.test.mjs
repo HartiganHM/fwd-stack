@@ -1,9 +1,16 @@
 // Proves each shared config loads and does what it claims. A config that fails to import breaks
 // every project that extends it, so the cheap check is worth having before anything is published.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { ESLint } from 'eslint';
+
+const tsc = createRequire(import.meta.url).resolve('typescript/bin/tsc');
 
 const read = (path) =>
   JSON.parse(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8'));
@@ -68,3 +75,34 @@ test('the baseline pins Node to the same major as .nvmrc', () => {
   ).trim();
   assert.equal(baseline.node, nvmrc);
 });
+
+// Every preset must type-check a file on its own, with nothing added by the project. `base`
+// once carried `resolveJsonModule` without a module resolution, which fails with TS5070 for any
+// project that extends it directly.
+for (const preset of ['base', 'strictest', 'nextjs', 'node']) {
+  test(`tsconfig preset ${preset} type-checks a file with no overrides`, () => {
+    const dir = mkdtempSync(join(tmpdir(), `fwd-stack-${preset}-`));
+    try {
+      writeFileSync(
+        join(dir, 'index.ts'),
+        'export const answer: number = 42;\n',
+      );
+      writeFileSync(
+        join(dir, 'tsconfig.json'),
+        JSON.stringify({
+          extends: fileURLToPath(
+            new URL(`../packages/tsconfig/${preset}.json`, import.meta.url),
+          ),
+          compilerOptions: { noEmit: true, incremental: false, plugins: [] },
+          include: ['index.ts'],
+        }),
+      );
+      const result = spawnSync(process.execPath, [tsc, '-p', dir], {
+        encoding: 'utf8',
+      });
+      assert.equal(result.status, 0, result.stdout + result.stderr);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+}
