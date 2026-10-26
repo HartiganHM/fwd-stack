@@ -2,6 +2,7 @@
   "name": "@fwd-stack/prettier-config",
   "version": "0.1.0",
   "description": "Shared Prettier config.",
+  "license": "MIT",
   "main": "index.json",
   "files": [
     "index.json"

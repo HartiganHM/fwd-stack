@@ -2,6 +2,7 @@
   "name": "@fwd-stack/tsconfig",
   "version": "0.1.0",
   "description": "Shared TypeScript configs: base, strictest, nextjs, node.",
+  "license": "MIT",
   "files": [
     "*.json"
   ],

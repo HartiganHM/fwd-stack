@@ -2,6 +2,7 @@
   "name": "@fwd-stack/eslint-config",
   "version": "0.1.0",
   "description": "Shared ESLint flat configs: base, node, next.",
+  "license": "MIT",
   "type": "module",
   "files": [
     "*.mjs"

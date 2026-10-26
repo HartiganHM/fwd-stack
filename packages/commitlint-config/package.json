@@ -2,6 +2,7 @@
   "name": "@fwd-stack/commitlint-config",
   "version": "0.1.0",
   "description": "Shared commitlint config: conventional commits with the fwd-stack type list.",
+  "license": "MIT",
   "type": "module",
   "main": "index.js",
   "files": [
