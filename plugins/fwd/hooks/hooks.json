@@ -21,6 +21,13 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/pr-review/gate-hook.sh",
+            "if": "Bash(*request-copilot-review*)",
+            "timeout": 60,
+            "statusMessage": "pr-review: checking the re-request is earned"
+          },
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/skills/pr-review/gate-hook.sh",
             "if": "Bash(*pulls/*/merge*)",
             "timeout": 60,
             "statusMessage": "pr-review: checking the merge bar"
