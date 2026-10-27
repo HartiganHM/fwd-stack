@@ -145,8 +145,10 @@ gh api repos/OWNER/REPO/issues/N/timeline --paginate \
   nine rounds usually means the answer is yes.
 - GraphQL `requestReviews` used to be the fallback. As of 2026-09-07 it 404s
   (`Could not resolve to User node…`, with the correct `botIds:` field) while
-  plain REST works. Try REST, verify on the timeline, and only reach for the
-  mutation if the timeline shows nothing:
+  plain REST works. **The hook denies it:** the mutation names the PR by node id,
+  which the gate cannot attribute, so it fails closed. If REST and the timeline
+  both show nothing, hand the attach to the user (the UI reviewers gear). The
+  mutation's shape is kept here for a user running it by hand:
 
 ```bash
 gh api graphql -f query='mutation{requestReviews(input:{

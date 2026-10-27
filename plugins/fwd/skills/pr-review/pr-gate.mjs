@@ -37,7 +37,7 @@ import {
 import { markStaleRounds } from './stale-rounds.mjs';
 import { ciProblemsOf } from './ci-state.mjs';
 import { ledgerPath } from './ledger-path.mjs';
-import { diminishingReturns, findingsIn } from './rounds.mjs';
+import { copyOnly, diminishingReturns, findingsIn } from './rounds.mjs';
 import {
   checkoutIsPr,
   entryMatchesRepo,
@@ -729,14 +729,7 @@ say(
 // a doc-only PR: two rounds is ~25 minutes to confirm a sentence.
 const isCopy = (p) => p.startsWith('src/lib/copy/');
 const lastScored = scored.at(-1);
-// Judged on the round that broke the clean streak: by the time a clean round has landed, the last
-// scored round has no findings, and judging that one made the one-round copy bar unreachable.
-const lastFinding = scored.at(-1 - cleanStreak);
-const copyOnlyRound = Boolean(
-  lastFinding &&
-  lastFinding.count > 0 &&
-  lastFinding.paths.every((p) => isCopy(p) || isDeclined(p, lastFinding.n)),
-);
+const copyOnlyRound = copyOnly(scored, cleanStreak, isCopy, isDeclined);
 const humanReviewApplies = Boolean(humanReviewer) && !destructive;
 
 // A destructive path never takes a lowered bar: clean-after-clean, whatever else applies (§8).
@@ -821,9 +814,11 @@ say(
     ? `${cleanStreak} successful round(s) trailing, need ${needed} §8`
     : softFixed
       ? `round ${last.n} was soft-only and you have pushed past it — §5 says merge without another round`
-      : hardStop
-        ? `${cleanStreak} trailing, need ${needed} — but §7's hard stop releases it: merge and report what is left`
-        : `${cleanStreak} successful round(s) trailing, need ${needed} §8`,
+      : hardStop && destructive
+        ? `${cleanStreak} trailing, need ${needed} — §7's hard stop ends requesting, but this diff is destructive, so the merge waits for the user to confirm it §8`
+        : hardStop
+          ? `${cleanStreak} trailing, need ${needed} — but §7's hard stop releases it: merge and report what is left`
+          : `${cleanStreak} successful round(s) trailing, need ${needed} §8`,
 );
 
 if (repeated.length) {
@@ -868,7 +863,9 @@ if (rounds.length > 3 && addedLate.length) {
 if (hardStop) {
   warn(
     'hard stop        ',
-    `round ${scored.length}, open ${openedHours.toFixed(1)}h — stop requesting, merge and report §7`,
+    destructive && !barMet
+      ? `round ${scored.length}, open ${openedHours.toFixed(1)}h — stop requesting; this diff is destructive and its bar is unmet, so ask the user to confirm the merge §7 §8`
+      : `round ${scored.length}, open ${openedHours.toFixed(1)}h — stop requesting, merge and report §7`,
   );
 }
 
@@ -1011,7 +1008,10 @@ if (action === 'rerequest') {
   }
   if (hardStop) {
     blocks.push(
-      `round ${scored.length}, open ${openedHours.toFixed(1)}h — §7's hard stop. There is no round ${scored.length + 1}: fix what is Crit/High/Med in the product tree, merge, and report the rest.`,
+      `round ${scored.length}, open ${openedHours.toFixed(1)}h — §7's hard stop. There is no round ${scored.length + 1}: fix what is Crit/High/Med in the product tree, ` +
+        (destructive && !barMet
+          ? 'then ask the user to confirm the merge: this diff is destructive and its bar is unmet (§8).'
+          : 'merge, and report the rest.'),
     );
   }
   if (barMet) {
@@ -1084,7 +1084,13 @@ if (blocks.length) {
       (action === 'merge'
         ? !hardStop && !barMet
         : barMet || softFixed || hardStopReleases);
-    if (!otherAllowed && oscillating.length > 0) {
+    if (!otherAllowed && hardStop && destructive && !barMet) {
+      console.log(
+        "NOTE: both actions are blocked on purpose. §7's hard stop has ended requesting, and this " +
+          'diff is destructive, so its bar is not lowered. The exit is the user confirming the merge.',
+      );
+      console.log('');
+    } else if (!otherAllowed && oscillating.length > 0) {
       console.log(
         "NOTE: both actions are blocked by §7's four-round rule. The exit is a scope ruling in the " +
           "PR body's `## Settled` naming the file, not another round.",
