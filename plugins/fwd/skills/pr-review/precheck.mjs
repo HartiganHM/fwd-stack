@@ -18,6 +18,7 @@ import { execFileSync } from 'node:child_process';
 const CURRENT_ERA = 'pre-720';
 
 import { ensureLedgerDir, ledgerPath } from './ledger-path.mjs';
+import { entryMatchesRepo, repoFromRemoteUrl } from './git-remote.mjs';
 
 const LEDGER = ledgerPath();
 const read = () =>
@@ -33,7 +34,26 @@ const die = (m) => {
   process.exit(1);
 };
 
-const [cmd, ...rest] = process.argv.slice(2);
+const [cmd, ...argv] = process.argv.slice(2);
+// `--repo=` is read below and never taken as a positional argument by any command.
+const rest = argv.filter((a) => !a.startsWith('--repo='));
+
+// The repository this checkout belongs to, or `--repo=o/r` when scoring from elsewhere. Rows
+// carry it so two repositories' branch names and PR numbers never share a row.
+const repoFlag = argv.find((a) => a.startsWith('--repo='))?.slice(7);
+const currentRepo = () => {
+  if (repoFlag) return repoFlag;
+  try {
+    return repoFromRemoteUrl(
+      execFileSync('git', ['remote', 'get-url', 'origin'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }),
+    );
+  } catch {
+    return null;
+  }
+};
 
 // ---- record: what the pass said, before the PR exists ------------------------
 if (cmd === 'record') {
@@ -67,9 +87,13 @@ if (cmd === 'record') {
   const head = execFileSync('git', ['rev-parse', 'HEAD'], {
     encoding: 'utf8',
   }).trim();
+  const repo = currentRepo();
   const d = read();
-  d.entries = d.entries.filter((e) => e.branch !== branch || e.scored);
+  d.entries = d.entries.filter(
+    (e) => e.branch !== branch || e.scored || !entryMatchesRepo(e, repo),
+  );
   d.entries.push({
+    ...(repo ? { repo } : {}),
     branch,
     head,
     at: new Date().toISOString(),
@@ -92,8 +116,10 @@ if (cmd === 'unrun') {
   const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
     encoding: 'utf8',
   }).trim();
+  const repo = currentRepo();
   const d = read();
   d.entries.push({
+    ...(repo ? { repo } : {}),
     branch,
     pr: Number(prNum),
     at: new Date().toISOString(),
@@ -172,14 +198,21 @@ if (cmd === 'score') {
   }
   // By PR number first: `record` runs on the branch, `score` often runs long
   // after it merged and was deleted, from whatever worktree is to hand.
+  const repo = currentRepo();
   const byPr = [...d.entries]
     .reverse()
-    .find((e) => e.pr === Number(pr) && !e.unrun);
+    .find((e) => e.pr === Number(pr) && !e.unrun && entryMatchesRepo(e, repo));
   const entry =
     byPr ??
     [...d.entries]
       .reverse()
-      .find((e) => e.branch === branch && !e.scored && !e.unrun);
+      .find(
+        (e) =>
+          e.branch === branch &&
+          !e.scored &&
+          !e.unrun &&
+          entryMatchesRepo(e, repo),
+      );
   if (!entry) {
     die(
       `no pre-open record for #${pr} or for branch ${branch}. ` +
@@ -293,7 +326,7 @@ function report(d) {
     for (const [k, v] of byKind)
       console.log(`  ${k}: ${v.p}/${v.r} over ${v.n} PR(s)`);
     const unstated = byKind.get('unstated');
-    if (unstated && unstated.n >= scored.length / 2) {
+    if (unstated && unstated.n >= scorable.length / 2) {
       console.log(
         `  ${unstated.n} of ${scorable.length} scorable rows are UNSTATED — the breakdown ` +
           'cannot carry a verdict until their kinds are recovered (`score` re-scores by PR number).',

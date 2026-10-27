@@ -143,3 +143,49 @@ test('one decline per finding discounts a round that raised exactly that many', 
   const one = parseSettled(body('- (round 1) `a.tsx`: first, declined.'));
   assert.equal(isDeclinedIn(one, 'src/a.tsx', 1, rounds), false);
 });
+
+test('a line naming the same file twice is still one decline', () => {
+  const twice = parseSettled(
+    body('- (round 1) `a.tsx`: declined; see `a.tsx` line 40 for why.'),
+  );
+  const rounds = [{ n: 1, paths: ['src/a.tsx'], findings: { 'src/a.tsx': 2 } }];
+  assert.equal(isDeclinedIn(twice, 'src/a.tsx', 1, rounds), false);
+});
+
+test('a shell script can be settled', () => {
+  const settled = parseSettled(
+    body('- (round 2) `scripts/gate-hook.sh`: declined, by design.'),
+  );
+  assert.equal(mentions(settled, 'scripts/gate-hook.sh'), true);
+  const rounds = [
+    {
+      n: 2,
+      paths: ['scripts/gate-hook.sh'],
+      findings: { 'scripts/gate-hook.sh': 1 },
+    },
+  ];
+  assert.equal(isDeclinedIn(settled, 'scripts/gate-hook.sh', 2, rounds), true);
+});
+
+test('a path counts whatever its extension, and extensionless build files count by name', () => {
+  const settled = parseSettled(
+    body(
+      '- (round 1) `Cargo.toml`, `apps/crawler/Dockerfile`, `Dockerfile` and `infra/main.go`: declined.',
+    ),
+  );
+  for (const p of [
+    'Cargo.toml',
+    'apps/crawler/Dockerfile',
+    'Dockerfile',
+    'infra/main.go',
+  ])
+    assert.equal(mentions(settled, p), true, p);
+});
+
+test('a slashed path keeps its parentheses, a call does not count', () => {
+  const settled = parseSettled(
+    body('- (round 1) `src/app/(auth)/page.tsx` and `render()`: declined.'),
+  );
+  assert.equal(mentions(settled, 'src/app/(auth)/page.tsx'), true);
+  assert.equal(settled.size, 1);
+});

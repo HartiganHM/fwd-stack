@@ -27,10 +27,25 @@ import {
   parseDocSync,
   parseSettled,
 } from './settled.mjs';
-import { isDoc, isDocOnly, isHandoff } from './classify.mjs';
+import {
+  isDoc,
+  isDocOnly,
+  isGenerated,
+  isHandoff,
+  isToolingConfig,
+} from './classify.mjs';
 import { markStaleRounds } from './stale-rounds.mjs';
 import { ciProblemsOf } from './ci-state.mjs';
 import { ledgerPath } from './ledger-path.mjs';
+import { diminishingReturns, findingsIn } from './rounds.mjs';
+import {
+  checkoutIsPr,
+  entryMatchesRepo,
+  refPath,
+  repoFromRemoteUrl,
+  sameRepo,
+} from './git-remote.mjs';
+import { parsePages } from './pages.mjs';
 
 const args = process.argv.slice(2);
 const pr = args.find((a) => /^\d+$/.test(a));
@@ -41,14 +56,20 @@ const repoArg = args.includes('--repo')
   ? args[args.indexOf('--repo') + 1]
   : null;
 
+const run = (args) =>
+  execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+const gh = (path) => parsePages(run(['api', path, '--paginate']));
+
 // `--audit-reviewed` lists every merged PR carrying a `## Reviewed by` header.
 // That header halves the merge bar and is the ONE input the gate cannot verify:
 // GitHub forbids approving your own PR and reading one creates no review event,
 // so a real human review and a fabricated header are indistinguishable over the
 // API. Agents must not write it (§8). This makes the claims auditable instead.
 if (args.includes('--audit-reviewed')) {
+  // `--repo o/r`, or the bare `o/r` SKILL.md documents (`--audit-reviewed [owner/name]`).
   const r =
     repoArg ??
+    args.find((a) => /^[A-Za-z0-9._-]+\/[A-Za-z0-9._-]+$/.test(a)) ??
     execFileSync(
       'gh',
       ['repo', 'view', '--json', 'nameWithOwner', '--jq', '.nameWithOwner'],
@@ -79,13 +100,10 @@ if (args.includes('--audit-reviewed')) {
   for (const p of prs) {
     const m = /^##\s+Reviewed by\s+(.+?)\s*$/im.exec(p.body ?? '');
     if (!m) continue;
-    const rounds = JSON.parse(
-      execFileSync(
-        'gh',
-        ['api', `repos/${r}/pulls/${p.number}/reviews`, '--paginate'],
-        { encoding: 'utf8', maxBuffer: 64e6 },
-      ) || '[]',
-    ).filter((v) => v.user?.type === 'Bot').length;
+    // Paginated: more than one page of reviews is several JSON arrays back to back.
+    const rounds = gh(`repos/${r}/pulls/${p.number}/reviews`).filter(
+      (v) => v.user?.type === 'Bot',
+    ).length;
     hits.push({
       n: p.number,
       who: m[1].trim(),
@@ -114,40 +132,6 @@ if (!pr) {
   );
   process.exit(2);
 }
-
-// `--paginate` concatenates one JSON document per page rather than merging
-// them, and this `gh` has no `--slurp`. Each page is parsed on its own and the
-// arrays joined, so a list endpoint and an object endpoint both come back as an
-// array and the callers do not have to care which they asked for.
-const run = (args) =>
-  execFileSync('gh', args, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
-
-const gh = (path) => {
-  const raw = run(['api', path, '--paginate']).trim();
-  const pages = [];
-  let depth = 0;
-  let start = 0;
-  let inString = false;
-  let escaped = false;
-  for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i];
-    if (inString) {
-      if (escaped) escaped = false;
-      else if (ch === '\\') escaped = true;
-      else if (ch === '"') inString = false;
-      continue;
-    }
-    if (ch === '"') inString = true;
-    else if (ch === '{' || ch === '[') {
-      if (depth === 0) start = i;
-      depth++;
-    } else if (ch === '}' || ch === ']') {
-      depth--;
-      if (depth === 0) pages.push(JSON.parse(raw.slice(start, i + 1)));
-    }
-  }
-  return pages.flatMap((page) => (Array.isArray(page) ? page : [page]));
-};
 
 const repo =
   repoArg ??
@@ -306,11 +290,7 @@ const isTooling = (p) =>
 // config) is how a tooling PR wires its script in; it names no product surface.
 // Without this, a clock-shift PR touching ci.yml, package.json and vitest.config.ts
 // beside its script scored the script's findings as soft tooling.
-const isToolingConfig = (p) =>
-  p.startsWith('.github/') ||
-  p === 'package.json' ||
-  p === 'pnpm-lock.yaml' ||
-  /^(vitest|playwright|eslint)\.config\.\w+$/.test(p);
+
 const productIsTooling =
   files.some((f) => isTooling(f.filename)) &&
   files.every(
@@ -434,20 +414,39 @@ const roundWeight = (round) => {
 };
 
 // The remote ref for this PR's head branch, asked once and used by both the
-// staleness check and the push-landed check below.
+// staleness check and the push-landed check below. `origin` answers only when it IS the PR's
+// head repository: run with `--repo` from a checkout of another repo, a branch of the same
+// name there handed back an unrelated SHA as the PR's head, which marked a fresh review stale
+// and could open the soft-fixed exception. Otherwise the API's ref for the head repo answers.
+let originRepo = null;
+try {
+  originRepo = repoFromRemoteUrl(
+    execFileSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' }),
+  );
+} catch {
+  // Not a git checkout.
+}
+const originIsHead = sameRepo(originRepo, prData.head.repo?.full_name);
 let refHead = null;
 try {
-  const out = execFileSync(
-    'git',
-    ['ls-remote', 'origin', `refs/heads/${prData.head.ref}`],
-    {
-      encoding: 'utf8',
-      timeout: 15000,
-    },
-  ).trim();
-  refHead = out.split(/\s+/)[0] || null;
+  if (originIsHead) {
+    const out = execFileSync(
+      'git',
+      ['ls-remote', 'origin', `refs/heads/${prData.head.ref}`],
+      {
+        encoding: 'utf8',
+        timeout: 15000,
+      },
+    ).trim();
+    refHead = out.split(/\s+/)[0] || null;
+  } else if (prData.head.repo?.full_name) {
+    const [ref] = gh(
+      `repos/${prData.head.repo.full_name}/git/ref/heads/${refPath(prData.head.ref)}`,
+    );
+    refHead = ref?.object?.sha ?? null;
+  }
 } catch {
-  // Network, auth, or a fork whose head branch this remote does not carry.
+  // Network, auth, or a deleted head branch: fall back to the PR's own sha.
 }
 
 // ---- the rules --------------------------------------------------------------
@@ -465,15 +464,12 @@ const successful = (r) => r.count === 0 || roundWeight(r) === 'soft';
 // problems. Three in a row cost another agent 25 minutes of backoff this week.
 const scored = rounds.filter((r) => !r.errored && !r.staleAtSubmit);
 
-// §8's diminishing returns, made reachable. An agent that obeys the gate could
-// never invoke a clause only the gate could grant, so the gate computes it: four
-// or more rounds, and the last three between them produced at most one finding.
-const recent = scored.slice(-3);
-const diminishing =
-  scored.length >= 4 &&
-  recent.length === 3 &&
-  recent.reduce((t, r) => t + r.count, 0) <= 1 &&
-  !destructive;
+// §8's diminishing returns. See rounds.mjs.
+const {
+  recent,
+  total: recentFindings,
+  applies: diminishing,
+} = diminishingReturns(scored, destructive);
 const trailingClean = [...scored].reverse().findIndex((r) => !successful(r));
 const cleanStreak = trailingClean === -1 ? scored.length : trailingClean;
 
@@ -556,7 +552,38 @@ try {
 } catch {
   // Not a git repo, or a detached HEAD — the check simply does not apply.
 }
-const onHeadBranch = localBranch && localBranch === prData.head.ref;
+// The local branch is the PR's only when the checkout is the PR's as well: `origin` is the head
+// repository, or the branch tracks the head repository or the PR's own ref (a fork PR checked out
+// inside the base repository). The same branch name in an unrelated repo is a different branch.
+const gitConfig = (key) => {
+  try {
+    return execFileSync('git', ['config', '--get', key], {
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    return null;
+  }
+};
+const upstream = localBranch ? gitConfig(`branch.${localBranch}.remote`) : null;
+const upstreamUrl =
+  upstream && !upstream.includes('/') && !upstream.includes(':')
+    ? gitConfig(`remote.${upstream}.url`)
+    : upstream;
+const mergeRef = localBranch ? gitConfig(`branch.${localBranch}.merge`) : null;
+// Each way of being the PR's checkout carries its own repository condition: the PR's branch name
+// in a checkout of the head repository, or the PR's own pull ref tracked from its base repository.
+const onHeadBranch = Boolean(
+  localBranch &&
+  checkoutIsPr({
+    branchMatches: localBranch === prData.head.ref,
+    originRepo,
+    upstreamRepo: repoFromRemoteUrl(upstreamUrl),
+    mergeRef,
+    headRepo: prData.head.repo?.full_name,
+    baseRepo: prData.base.repo?.full_name,
+    pr,
+  }),
+);
 
 // The REF is the authority on whether a push landed, not the PR API: `pulls/N`
 // lags the ref by seconds and reported a false negative on a push that had in
@@ -577,15 +604,23 @@ const say = (ok, rule, detail) =>
 const warn = (rule, detail) => console.log(`warn  ${rule}  ${detail}`);
 const blocks = [];
 
+// A file is prose or generated, never both: `docs/drizzle/meta/…` must leave the runtime count once.
 const proseLines = files
   .filter(
-    (f) => isDoc(f.filename) || isHandoff(f.filename) || isCopyPath(f.filename),
+    (f) =>
+      !isGenerated(f.filename) &&
+      (isDoc(f.filename) || isHandoff(f.filename) || isCopyPath(f.filename)),
   )
+  .reduce((t, f) => t + f.additions + f.deletions, 0);
+const generatedLines = files
+  .filter((f) => isGenerated(f.filename))
   .reduce((t, f) => t + f.additions + f.deletions, 0);
 console.log(
   `PR #${pr} · ${repo} · ${changed} files, ${lines} lines` +
-    (proseLines > 0
-      ? ` (${lines - proseLines} runtime, ${proseLines} prose)`
+    (proseLines + generatedLines > 0
+      ? ` (${lines - proseLines - generatedLines} runtime, ${proseLines} prose` +
+        (generatedLines > 0 ? `, ${generatedLines} generated` : '') +
+        ')'
       : '') +
     `, ${rounds.length} rounds`,
 );
@@ -620,7 +655,7 @@ if (diminishing) {
   say(
     true,
     'diminishing      ',
-    `rounds ${recent.map((r) => r.n).join(', ')} produced ${recent.reduce((t, r) => t + r.count, 0)} finding(s) between them — §8's diminishing-returns clause applies, bar is ONE round`,
+    `rounds ${recent.map((r) => r.n).join(', ')} produced ${recentFindings} finding(s) between them — §8's diminishing-returns clause applies, bar is ONE round`,
   );
 }
 if (docSynced.size > 0) {
@@ -683,7 +718,7 @@ say(
   rounds
     .map(
       (r) =>
-        `${r.n}:${r.errored ? 'err' : r.staleAtSubmit ? 'stale' : r.count === 0 ? 'clean' : `${r.count}${roundWeight(r) === 'soft' ? 's' : ''}`}`,
+        `${r.n}:${r.errored ? 'err' : r.staleAtSubmit ? 'stale' : r.count === 0 ? 'clean' : `${findingsIn(r)}${roundWeight(r) === 'soft' ? 's' : ''}`}`,
     )
     .join(' '),
 );
@@ -828,7 +863,7 @@ if (prData.base.ref !== prData.base.repo.default_branch) {
 // Counted on the RUNTIME diff. A threshold that fires on a 2,400-line copy
 // module is measuring the wrong thing: that module cannot be split without
 // splitting the page it draws, and prose reads far faster than a branch.
-const runtimeLines = lines - proseLines;
+const runtimeLines = lines - proseLines - generatedLines;
 // The pre-open trial (§10b) only answers its question if every PR feeds it. The
 // gate cannot run the pass — that is a subagent the session dispatches — but it
 // can see whether this branch ever recorded one.
@@ -840,7 +875,14 @@ if (onHeadBranch) {
   let recorded = false;
   try {
     recorded = JSON.parse(readFileSync(ledger, 'utf8')).entries.some(
-      (e) => e.branch === localBranch,
+      // Rows carry the repository of the checkout that recorded them, which on a fork PR is
+      // the head repository, not the base this gate reads the PR from.
+      (e) =>
+        e.branch === localBranch &&
+        // The recorder tags a row with its checkout's origin: the head repository, or the
+        // base repository for a fork PR checked out there. Either is this PR's.
+        (entryMatchesRepo(e, prData.head.repo?.full_name ?? repo) ||
+          entryMatchesRepo(e, prData.base.repo?.full_name ?? repo)),
     );
   } catch {
     /* no ledger yet */
@@ -862,7 +904,9 @@ if (changed > 20 || runtimeLines > 800) {
   warn(
     'size gate        ',
     `${changed} files / ${runtimeLines} runtime lines — over the split threshold §10` +
-      (proseLines > 0 ? ` (${proseLines} prose lines excluded)` : ''),
+      (proseLines + generatedLines > 0
+        ? ` (${proseLines} prose and ${generatedLines} generated lines excluded)`
+        : ''),
   );
 } else if (lines > 800) {
   say(

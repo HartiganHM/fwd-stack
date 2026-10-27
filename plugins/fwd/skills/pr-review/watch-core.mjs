@@ -97,3 +97,10 @@ export function describe(pr, e) {
       : `#${pr} CI FAILED on ${s(e.head)}: ${e.failed.join(', ')}`;
   return `#${pr} is ${e.state}: watcher done`;
 }
+
+// Whether another sleep-then-read cycle still ends before the deadline. The deadline is counted
+// from process start, priming included, and a cycle is the sleep plus up to `readMs` of API calls:
+// a loop that only checked the clock before sleeping could start its last cycle at 28:59 and print
+// TIMED OUT after Monitor's 30-minute cap had already killed it, which is a silent exit.
+export const fitsAnotherPoll = (now, deadline, intervalMs, readMs = 30_000) =>
+  now + intervalMs + readMs <= deadline;
