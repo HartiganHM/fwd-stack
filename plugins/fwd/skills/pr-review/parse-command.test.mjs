@@ -6,6 +6,7 @@ import {
   parseCommand,
   simpleCommands,
   unaccountedMerges,
+  unreadableLine,
 } from './parse-command.mjs';
 
 const merge = (pr, repo = null) => ({ action: 'merge', pr, repo });
@@ -312,6 +313,19 @@ test('any expansion in a gated command makes it unreadable', () => {
     'gh api -X POST "repos/$O/$R/pulls/42/requested_reviewers"',
   );
   assert.equal(rr[0].pr, null);
+});
+
+test('a gated command line holding any expansion or a repeated GH_REPO is unreadable as a whole', () => {
+  for (const cmd of [
+    'GH_REPO=a/b GH_REPO=o/r gh pr merge 42 --squash',
+    'gh api -X PUT "repos/o/r/pulls/$PR/merge"',
+    'gh api -X POST "repos/o/r/pulls/$PR/requested_reviewers"',
+    `GH_REPO="$TARGET_REPO" bash -c 'gh pr merge 42 --squash'`,
+  ])
+    assert.equal(unreadableLine(cmd), true, cmd);
+  // An expansion in a line with no gated action is none of the gate's business.
+  assert.equal(unreadableLine('echo $HOME && git status'), false);
+  assert.equal(unreadableLine('gh pr merge 42 --squash'), false);
 });
 
 test('anything else is not gated', () => {

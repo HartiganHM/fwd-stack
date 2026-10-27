@@ -330,11 +330,35 @@ export function unaccountedMerges(cmd) {
       plain.match(
         /\bpr\s+(?:(?:-R|--repo)\s+\S+\s+|--repo=\S+\s+|-R\S+\s+)*merge\b/g,
       ) ?? []
-    ).length + (plain.match(/pulls\/\d+\/merge\b/g) ?? []).length;
+    ).length + (plain.match(/pulls\/[^/\s]+\/merge\b/g) ?? []).length;
   const merges = parseCommand(cmd).filter((g) => g.action === 'merge');
   const unresolved = merges.filter((g) => !g.pr).length;
   const read = merges.length - unresolved;
   return Math.max(unresolved, mentioned - read);
+}
+
+// The blunt end of the fail-closed rule. Review kept finding new places an expansion could hide
+// (a REST path, a GH_REPO value on a wrapper, a repeated assignment), each a value the hook
+// cannot see. So a command line that mentions a gated action at all, and contains an expansion
+// (`$`, a backtick) or sets GH_REPO more than once, is unreadable as a whole.
+export function mentionsGatedAction(cmd) {
+  const plain = cmd.replace(/\\\n/g, ' ').replace(/['"\\]/g, ' ');
+  return (
+    /\bpr\s+(?:(?:-R|--repo)\s+\S+\s+|--repo=\S+\s+|-R\S+\s+)*merge\b/.test(
+      plain,
+    ) ||
+    /pulls\/[^/\s]+\/merge\b/.test(plain) ||
+    /requested_reviewers|request-copilot-review/.test(plain)
+  );
+}
+export function unreadableLine(cmd) {
+  if (!mentionsGatedAction(cmd)) return false;
+  return (
+    /[$`]/.test(cmd) ||
+    (cmd.match(/\bGH_REPO=/g) ?? []).length > 1 ||
+    unaccountedMerges(cmd) > 0 ||
+    parseCommand(cmd).some((g) => !g.pr)
+  );
 }
 
 if (
@@ -343,9 +367,7 @@ if (
 ) {
   const cmd = process.argv[2] ?? '';
   const parsed = parseCommand(cmd);
-  // A re-request the parser cannot attribute is denied the same way as a merge.
-  if (unaccountedMerges(cmd) > 0 || parsed.some((g) => !g.pr))
-    console.log('unreadable');
+  if (unreadableLine(cmd)) console.log('unreadable');
   for (const g of parsed)
     if (g.pr) console.log([g.action, g.pr, g.repo].filter(Boolean).join(' '));
 }
