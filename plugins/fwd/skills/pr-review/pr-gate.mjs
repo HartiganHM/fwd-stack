@@ -736,8 +736,12 @@ const copyOnlyRound = Boolean(
 );
 const humanReviewApplies = Boolean(humanReviewer) && !destructive;
 
+// A destructive path never takes a lowered bar: clean-after-clean, whatever else applies (§8).
 const needed =
-  docOnly || copyOnlyRound || humanReviewApplies || diminishing ? 1 : 2;
+  !destructive &&
+  (docOnly || copyOnlyRound || humanReviewApplies || diminishing)
+    ? 1
+    : 2;
 const barMet = cleanStreak >= needed;
 // §7's hard stop, computed here rather than only reported below, because it is
 // a third door out of the merge bar and not merely a warning.
@@ -759,7 +763,9 @@ const barMet = cleanStreak >= needed;
 // land, waiting on a decision — was blocked from EVER requesting its first
 // review once it had been open four hours, which is the opposite of the rule's
 // intent and unrecoverable: the only move that clears it is the one it forbids.
-const hardStop = rounds.length >= 12 || (openedHours >= 4 && rounds.length > 0);
+// Counted on SCORED rounds: an errored or stale review is not a round (§4), so a run of Copilot
+// errors must not bring the hard stop forward.
+const hardStop = scored.length >= 12 || (openedHours >= 4 && scored.length > 0);
 // ---- oscillation -----------------------------------------------------------
 // The three-round rule says a surface drawing findings three rounds running is a
 // SCOPE decision. It warned, and a warning is not enough: on one PR one line
@@ -1013,6 +1019,15 @@ if (action === 'rerequest') {
   // legal move rather than the forbidden one.
   const mergeBlocked =
     !barMet && !softFixed && !hardStop && oscillating.length === 0;
+  // §7: four consecutive rounds on one existing surface is a scope decision, and another round is
+  // the one move that cannot make it. Record the ruling in `## Settled` to release this.
+  if (oscillating.length > 0) {
+    blocks.push(
+      `${oscillating.join(', ')} drew findings in ${consecutive(oscillating[0])} consecutive rounds. ` +
+        "§7: make the scope decision and record it in the PR body's `## Settled` (naming the file); " +
+        'another round will not settle it.',
+    );
+  }
   if (
     last &&
     !stale &&

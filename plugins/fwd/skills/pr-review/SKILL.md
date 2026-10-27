@@ -467,7 +467,7 @@ What predicts "stop" is not the round number. It is whether findings land on
 three consecutive rounds, the next action is a **scope decision, not another
 fix**. Ask whether the code should exist.
 
-**At four consecutive rounds the gate blocks the re-request**, and the escape is
+**At four consecutive rounds the gate blocks the re-request and the merge**, and the escape is
 to record the ruling in `## Settled` naming the file. Any mention releases the
 block, with or without a round, because it discounts no finding.
 
