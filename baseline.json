@@ -1,0 +1,16 @@
+{
+  "$comment": "The versions every fwd-stack project is held to. `stack doctor` (planned) compares a project's package.json against these majors. Raise a pin here first, then in each project.",
+  "node": "24",
+  "pnpm": "10.33.2",
+  "packages": {
+    "next": "16",
+    "react": "19",
+    "typescript": "5",
+    "zod": "4",
+    "vitest": "5",
+    "@sentry/nextjs": "11",
+    "drizzle-orm": "0.45",
+    "eslint": "9",
+    "prettier": "3"
+  }
+}

@@ -1,0 +1,80 @@
+# Reusable CI gate for fwd-stack projects. A project calls it from its own ci.yml:
+#
+#   jobs:
+#     gate:
+#       uses: HartiganHM/fwd-stack/.github/workflows/node-ci.yml@main
+#       with:
+#         scripts: typecheck lint test build
+#         build-env: |
+#           DATABASE_URL=postgres://stub:stub@localhost/stub
+#
+# Project-specific jobs (e2e, test selection, probes) stay in the project's own workflow beside
+# this call. Each script runs through `pnpm run --if-present`, so a project without one skips it.
+name: Node CI
+
+on:
+  workflow_call:
+    inputs:
+      scripts:
+        description: Space-separated package.json scripts to run, in order.
+        type: string
+        default: typecheck lint test build
+      working-directory:
+        description: Directory holding the package.json and pnpm-lock.yaml to run against, relative to the repository root.
+        type: string
+        default: .
+      node-version-file:
+        description: File that pins the Node version, relative to working-directory.
+        type: string
+        default: .nvmrc
+      build-env:
+        description: KEY=VALUE lines exported before the scripts run (stub values only, never secrets).
+        type: string
+        default: ''
+      timeout-minutes:
+        type: number
+        default: 20
+
+permissions:
+  contents: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: ${{ inputs.timeout-minutes }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.working-directory }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # `working-directory` reaches only `run` steps, so the setup actions are given the nested
+      # project's files explicitly.
+      - uses: pnpm/action-setup@v6
+        with:
+          package_json_file: ${{ inputs.working-directory }}/package.json
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: ${{ inputs.working-directory }}/${{ inputs.node-version-file }}
+          cache: pnpm
+          cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Export build environment
+        if: inputs.build-env != ''
+        env:
+          BUILD_ENV: ${{ inputs.build-env }}
+        run: printf '%s\n' "$BUILD_ENV" | sed '/^[[:space:]]*$/d' >> "$GITHUB_ENV"
+
+      - name: Run scripts
+        env:
+          SCRIPTS: ${{ inputs.scripts }}
+        run: |
+          for script in $SCRIPTS; do
+            echo "::group::pnpm run $script"
+            pnpm run --if-present "$script"
+            echo "::endgroup::"
+          done

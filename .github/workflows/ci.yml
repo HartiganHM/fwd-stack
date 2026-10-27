@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # The kit runs its own reusable gate, so a change that breaks the workflow fails here first.
+  gate:
+    uses: ./.github/workflows/node-ci.yml
+    with:
+      scripts: format:check typecheck lint test
