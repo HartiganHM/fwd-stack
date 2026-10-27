@@ -18,6 +18,8 @@
 // no value reports state without judging an action.
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import {
   isDeclinedIn,
@@ -832,7 +834,9 @@ const runtimeLines = lines - proseLines;
 // can see whether this branch ever recorded one.
 if (onHeadBranch) {
   const ledger = ledgerPath();
-  const here = new URL('.', import.meta.url).pathname;
+  // A filesystem path, not a URL's: `.pathname` keeps `%20` for a space in the install path.
+  const here = dirname(fileURLToPath(import.meta.url));
+  const quote = (p) => `'${p.replaceAll("'", `'\\''`)}'`;
   let recorded = false;
   try {
     recorded = JSON.parse(readFileSync(ledger, 'utf8')).entries.some(
@@ -845,8 +849,8 @@ if (onHeadBranch) {
     warn(
       'pre-open pass    ',
       `no cold-eyes record for ${localBranch}. §10b: before \`gh pr create\`, dispatch a general-purpose ` +
-        `subagent with ${here}precheck-prompt.md, then ` +
-        `\`node ${here}precheck.mjs record <file|->\`. ` +
+        `subagent with ${join(here, 'precheck-prompt.md')}, then ` +
+        `\`node ${quote(join(here, 'precheck.mjs'))} record <file|->\`. ` +
         `Pre-authorized in AGENTS.md — run it on EVERY PR while the trial is open, not the uncertain ones`,
     );
   } else {
