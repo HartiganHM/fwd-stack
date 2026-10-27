@@ -128,7 +128,8 @@ const repoIn = (words) => {
       new RegExp(`^${REPO}$`).test(words[i + 1] ?? '')
     )
       return words[i + 1];
-    const eq = w.match(new RegExp(`^--repo=(${REPO})$`));
+    // `--repo=o/r` and the attached short form `-Ro/r`.
+    const eq = w.match(new RegExp(`^(?:--repo=|-R)(${REPO})$`));
     if (eq) return eq[1];
   }
   for (const w of words) {
@@ -167,8 +168,10 @@ function mergeOf(words) {
 }
 
 function gatedIn(words) {
+  // A merge whose PR the parser cannot resolve is still reported, with pr null, so it is
+  // counted as unreadable rather than dropped.
   const merge = mergeOf(words);
-  if (merge) return merge.pr ? merge : null;
+  if (merge) return merge;
   const text = words.join(' ');
   // The REST form of a merge (`gh api -X PUT repos/O/R/pulls/N/merge`) never spells
   // `gh pr merge`, and it is how orchestrated lanes merge.
@@ -245,8 +248,10 @@ export function unaccountedMerges(cmd) {
   const mentioned =
     (cmd.match(/\bpr\s+merge\b/g) ?? []).length +
     (cmd.match(/pulls\/\d+\/merge\b/g) ?? []).length;
-  const read = parseCommand(cmd).filter((g) => g.action === 'merge').length;
-  return Math.max(0, mentioned - read);
+  const merges = parseCommand(cmd).filter((g) => g.action === 'merge');
+  const unresolved = merges.filter((g) => !g.pr).length;
+  const read = merges.length - unresolved;
+  return Math.max(unresolved, mentioned - read);
 }
 
 if (
@@ -256,5 +261,5 @@ if (
   const cmd = process.argv[2] ?? '';
   if (unaccountedMerges(cmd) > 0) console.log('unreadable');
   for (const g of parseCommand(cmd))
-    console.log([g.action, g.pr, g.repo].filter(Boolean).join(' '));
+    if (g.pr) console.log([g.action, g.pr, g.repo].filter(Boolean).join(' '));
 }

@@ -59,20 +59,21 @@ test('a pull URL names both the PR and its repository', () => {
 
 test('a merge naming no number (current branch or a branch name) is unreadable, so denied', () => {
   for (const cmd of ['gh pr merge --squash', 'gh pr merge feat/x --squash']) {
-    assert.deepEqual(parseCommand(cmd), []);
+    assert.deepEqual(parseCommand(cmd), [merge(null)]);
     assert.equal(unaccountedMerges(cmd), 1, cmd);
   }
 });
 
 test('every gated command in a chain is reported, not only the first', () => {
   assert.deepEqual(parseCommand('gh pr merge feat/x; gh pr merge 42'), [
+    merge(null),
     merge('42'),
   ]);
   assert.deepEqual(
     parseCommand(
       'gh pr merge --squash && gh api -X PUT repos/o/r/pulls/42/merge',
     ),
-    [merge('42', 'o/r')],
+    [merge(null), merge('42', 'o/r')],
   );
   assert.deepEqual(parseCommand('gh pr merge 1 && gh pr merge 2'), [
     merge('1'),
@@ -231,6 +232,21 @@ test('every merge the text mentions is accounted for when the parser reads them 
   assert.equal(unaccountedMerges('gh pr merge 1 && gh pr merge 2'), 0);
   assert.equal(unaccountedMerges('gh api -X PUT repos/o/r/pulls/4/merge'), 0);
   assert.equal(unaccountedMerges('git merge main'), 0);
+});
+
+test('the attached -R form names the repository', () => {
+  assert.deepEqual(parseCommand('gh pr merge 42 -Ro/r --squash'), [
+    merge('42', 'o/r'),
+  ]);
+});
+
+test('a merge the tokenizer finds but cannot resolve is unreadable, whatever its spelling', () => {
+  for (const cmd of [
+    "gh pr 'merge' --squash",
+    'gh pr \\\nmerge --squash',
+    'bash -c "gh pr \'merge\'"',
+  ])
+    assert.ok(unaccountedMerges(cmd) > 0, cmd);
 });
 
 test('anything else is not gated', () => {

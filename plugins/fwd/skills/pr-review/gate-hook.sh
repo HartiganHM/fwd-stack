@@ -21,7 +21,13 @@ cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // ""')
 # The repository matters too. The hook runs in the SESSION's working directory, which is not
 # always the checkout the command `cd`s into, so each command's own `repos/O/R/`, `-R`, `--repo`,
 # `GH_REPO=` or pull URL wins; pr-gate falls back to `gh repo view` when it names none.
-gated=$(node "$here/parse-command.mjs" "$cmd")
+# If the parser itself fails (node missing, a throw), deny: an empty answer would read as
+# "nothing gated" and let the merge through.
+if ! gated=$(node "$here/parse-command.mjs" "$cmd"); then
+  jq -nc '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny",
+    permissionDecisionReason: "pr-review gate: the command parser failed, so the merge bar cannot be checked. Fix the hook (is node on PATH?) before merging."}}'
+  exit 0
+fi
 
 # Nothing gated, or no PR number to check (e.g. `gh pr merge` on the current branch): allow
 # rather than guess. A gate that blocks what it cannot read teaches people to disable it.
