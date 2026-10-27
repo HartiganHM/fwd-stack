@@ -5,8 +5,26 @@
 // that measures lanes' real context replaces this where one runs; this is the backstop for a
 // session nobody is watching.
 import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 import { loadConfig } from '../lib/fwd-config.mjs';
+
+// Assistant turns: distinct assistant message ids. One turn is written as several JSONL lines
+// (a line per content block), so counting lines overstated depth nearly twofold.
+export function assistantTurns(jsonl) {
+  const ids = new Set();
+  for (const line of jsonl.split('\n')) {
+    if (!line.includes('"assistant"')) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (entry.type === 'assistant' && entry.message?.id)
+        ids.add(entry.message.id);
+    } catch {
+      // A partial last line while the transcript is being written.
+    }
+  }
+  return ids.size;
+}
 
 export function budgetMessage(turns, { warn = 20, critical = 35 } = {}) {
   if (turns >= critical)
@@ -16,7 +34,11 @@ export function budgetMessage(turns, { warn = 20, critical = 35 } = {}) {
   return null;
 }
 
-if (import.meta.main) {
+// Run as a hook, not when a test imports it. (`import.meta.main` would do, but needs Node 24.2.)
+if (
+  process.argv[1] &&
+  import.meta.url === pathToFileURL(process.argv[1]).href
+) {
   let payload = {};
   try {
     payload = JSON.parse(readFileSync(0, 'utf8') || '{}');
@@ -29,7 +51,7 @@ if (import.meta.main) {
   } catch {
     process.exit(0);
   }
-  const turns = (transcript.match(/"role":"assistant"/g) ?? []).length;
+  const turns = assistantTurns(transcript);
   const message = budgetMessage(turns, loadConfig().sessionBudget);
   if (message) console.log(message);
 }

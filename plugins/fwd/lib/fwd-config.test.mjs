@@ -40,3 +40,20 @@ test('CLAUDE_CONFIG_DIR moves the machine file, and no files is an empty config'
   assert.equal(cfg.ownApp, true);
   assert.deepEqual(loadConfig({}, '/h', files({})).neon.protected, {});
 });
+
+test('a project cannot wipe the machine list by setting it to null or []', () => {
+  for (const wiped of [null, [], 'none'])
+    assert.deepEqual(
+      loadConfig(
+        { CLAUDE_PROJECT_DIR: '/p' },
+        '/h',
+        files({
+          '/h/.claude/fwd.json': {
+            neon: { protected: { 'br-a': 'production' } },
+          },
+          '/p/.claude/fwd.json': { neon: { protected: wiped } },
+        }),
+      ).neon.protected,
+      { 'br-a': 'production' },
+    );
+});

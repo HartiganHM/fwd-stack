@@ -20,7 +20,8 @@
 //   3. A continuation cap — counted per session, never reset by the hook.
 // Any one of them firing disarms the run and allows the stop.
 //
-// CLI: arm <reason> [--minutes N] [--max N] | disarm | status   (session id via $1 or env)
+// CLI: arm <reason> [--minutes N] [--max N] --session ID | disarm --session ID | status --session ID
+//      (`--flag N` or `--flag=N`; CLAUDE_SESSION_ID stands in for --session when set)
 
 import { readFileSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
@@ -60,9 +61,15 @@ const [cmd, ...rest] = process.argv.slice(2);
 
 // ---- CLI surface, for the agent to arm and disarm its own run -------------------
 if (cmd === 'arm' || cmd === 'disarm' || cmd === 'status') {
-  const sid =
-    process.env.CLAUDE_SESSION_ID ||
-    rest.find((a) => a.startsWith('--session='))?.slice(10);
+  // `--flag value` or `--flag=value`; every other word is the run's description.
+  const flags = {};
+  const words = [];
+  for (let i = 0; i < rest.length; i++) {
+    const m = rest[i].match(/^--(session|minutes|max)(?:=(.*))?$/);
+    if (!m) words.push(rest[i]);
+    else flags[m[1]] = m[2] ?? rest[++i];
+  }
+  const sid = process.env.CLAUDE_SESSION_ID || flags.session;
   if (!sid) {
     console.error(
       'no session id: pass --session=<id> or set CLAUDE_SESSION_ID',
@@ -78,15 +85,22 @@ if (cmd === 'arm' || cmd === 'disarm' || cmd === 'status') {
     console.log(JSON.stringify(read(sid) ?? { armed: false }, null, 2));
     process.exit(0);
   }
-  const arg = (flag, dflt) => {
-    const hit = rest.find((a) => a.startsWith(`--${flag}=`));
-    return hit ? Number(hit.split('=')[1]) : dflt;
+  // A value that is not a positive number refuses to arm: "armed for NaNm" wrote a run the
+  // hook released on its first stop, while the agent believed it was guarded.
+  const positive = (name, dflt) => {
+    if (flags[name] === undefined) return dflt;
+    const n = Number(flags[name]);
+    if (!Number.isFinite(n) || n <= 0) {
+      console.error(
+        `--${name} must be a positive number, got "${flags[name]}"`,
+      );
+      process.exit(2);
+    }
+    return n;
   };
-  const minutes = arg('minutes', 120);
-  const max = arg('max', 40);
-  const reason =
-    rest.filter((a) => !a.startsWith('--')).join(' ') ||
-    'Autonomous run in progress.';
+  const minutes = positive('minutes', 120);
+  const max = positive('max', 40);
+  const reason = words.join(' ') || 'Autonomous run in progress.';
   write(sid, {
     armed: true,
     reason,
@@ -118,10 +132,9 @@ if (!sid) process.exit(0);
 const state = read(sid);
 if (!state?.armed) process.exit(0);
 
-// A run that has already been told to stop once does not get to block again on the
-// same stop — `stop_hook_active` is the harness telling us we are in a continuation
-// it already granted.
-if (payload.stop_hook_active) process.exit(0);
+// `stop_hook_active` is NOT a reason to let the stop through. It is set on every stop that follows
+// a block, so honouring it gave an armed run exactly one extra turn and made the continuation cap
+// unreachable. The cap and the expiry below are what end a run.
 
 const disarm = (why) => {
   clear(sid);

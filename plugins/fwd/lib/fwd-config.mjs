@@ -43,11 +43,14 @@ export function loadConfig(
     ? read(join(env.CLAUDE_PROJECT_DIR, '.claude', 'fwd.json'))
     : {};
   const merged = mergeConfig(machine, project);
+  // Only objects join the union: a project setting `protected` to null or [] cannot wipe the
+  // machine's list, which mergeConfig alone would let it do.
+  const ids = (v) => (isObject(v) ? v : {});
   merged.neon = {
-    ...merged.neon,
+    ...(isObject(merged.neon) ? merged.neon : {}),
     protected: {
-      ...(machine.neon?.protected ?? {}),
-      ...(project.neon?.protected ?? {}),
+      ...ids(machine.neon?.protected),
+      ...ids(project.neon?.protected),
     },
   };
   return merged;
