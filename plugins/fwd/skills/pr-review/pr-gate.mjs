@@ -34,6 +34,7 @@ import { ledgerPath } from './ledger-path.mjs';
 import { diminishingReturns, findingsIn } from './rounds.mjs';
 import {
   entryMatchesRepo,
+  refPath,
   repoFromRemoteUrl,
   sameRepo,
 } from './git-remote.mjs';
@@ -437,7 +438,7 @@ try {
     refHead = out.split(/\s+/)[0] || null;
   } else if (prData.head.repo?.full_name) {
     const [ref] = gh(
-      `repos/${prData.head.repo.full_name}/git/ref/heads/${prData.head.ref}`,
+      `repos/${prData.head.repo.full_name}/git/ref/heads/${refPath(prData.head.ref)}`,
     );
     refHead = ref?.object?.sha ?? null;
   }

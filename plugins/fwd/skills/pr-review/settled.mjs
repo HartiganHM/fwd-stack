@@ -23,16 +23,17 @@
 // A backticked file path. The gate can score a finding on any file, so any token with a `/`
 // counts, and a bare filename counts by its extension or its name: a list of a dozen extensions
 // once ignored a Settled line naming a `.sh` file, so its ruling could never release its block.
-// A dotted identifier with no slash (`page.evaluate`) is code, not a path.
+// A dotted identifier with no slash (`page.evaluate`, `fn()`) is code, not a path.
 const PATH = /`([^`\s]+)`/g;
 const FILE_EXT =
   /\.(?:m?[jt]sx?|mts|cts|md|mdx|json|txt|css|scss|sass|less|sql|ya?ml|toml|ini|env|sh|bash|zsh|py|rb|go|rs|java|kt|swift|php|html|svg|graphql|prisma|lock)$/;
 const isPathLike = (t) =>
-  !/[()]/.test(t) &&
-  !/^https?:/.test(t) &&
-  (t.includes('/') ||
-    FILE_EXT.test(t) ||
-    /^(?:Dockerfile|Makefile|Procfile|\.env.*)$/.test(t));
+  t.includes('/')
+    ? // A slashed path may hold parentheses: Next.js route groups (`src/app/(auth)/page.tsx`).
+      !/^https?:/.test(t)
+    : !/[()]/.test(t) &&
+      (FILE_EXT.test(t) ||
+        /^(?:Dockerfile|Makefile|Procfile|\.env.*)$/.test(t));
 const pathsIn = (text) =>
   [...text.matchAll(PATH)]
     .map((m) => m[1])

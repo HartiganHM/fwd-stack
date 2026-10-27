@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 import {
   entryMatchesRepo,
+  refPath,
   repoFromRemoteUrl,
   sameRepo,
 } from './git-remote.mjs';
@@ -36,4 +37,10 @@ test('a ledger row matches only its own repository, and legacy rows match any', 
   assert.equal(entryMatchesRepo({ repo: 'o/a' }, 'o/b'), false);
   assert.equal(entryMatchesRepo({}, 'o/b'), true);
   assert.equal(entryMatchesRepo({ repo: 'o/a' }, null), true);
+});
+
+test('a branch name is encoded per segment for a REST path', () => {
+  assert.equal(refPath('fix/#42'), 'fix/%2342');
+  assert.equal(refPath('feat/a b?c'), 'feat/a%20b%3Fc');
+  assert.equal(refPath('main'), 'main');
 });

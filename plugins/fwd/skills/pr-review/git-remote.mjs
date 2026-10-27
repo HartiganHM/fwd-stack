@@ -19,3 +19,8 @@ export const sameRepo = (a, b) =>
 // checkout, matches as it always did rather than orphaning the trial's history.
 export const entryMatchesRepo = (entry, repo) =>
   !entry.repo || !repo || sameRepo(entry.repo, repo);
+
+// A branch name as a REST path: each segment encoded, the slashes kept. `fix/#42` unencoded made
+// `#42` a URL fragment, so the gate asked for the wrong ref.
+export const refPath = (ref) =>
+  ref.split('/').map(encodeURIComponent).join('/');

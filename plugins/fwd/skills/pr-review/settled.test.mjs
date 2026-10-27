@@ -181,3 +181,11 @@ test('a path counts whatever its extension, and extensionless build files count 
   ])
     assert.equal(mentions(settled, p), true, p);
 });
+
+test('a slashed path keeps its parentheses, a call does not count', () => {
+  const settled = parseSettled(
+    body('- (round 1) `src/app/(auth)/page.tsx` and `render()`: declined.'),
+  );
+  assert.equal(mentions(settled, 'src/app/(auth)/page.tsx'), true);
+  assert.equal(settled.size, 1);
+});
