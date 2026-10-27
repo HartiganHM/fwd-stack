@@ -1,0 +1,53 @@
+// What lane-context.mjs reads out of a session transcript, kept pure so it is testable.
+//
+// A session's context is what its NEXT turn will re-read: the last assistant turn's input plus
+// cache reads plus cache writes. Per-turn context size, not session length, drives cost, so this
+// is the number a lane is rotated on.
+
+/** Claude Code's folder name for a project's transcripts: every non-alphanumeric becomes `-`. */
+export const projectDirName = (path) => path.replace(/[^A-Za-z0-9]/g, '-');
+
+export function sessionSummary(jsonl) {
+  let name = null;
+  let model = null;
+  let context = null;
+  let at = null;
+  for (const line of jsonl.split('\n')) {
+    if (!line) continue;
+    let e;
+    try {
+      e = JSON.parse(line);
+    } catch {
+      continue; // a partial first line from a tail read, or a line being written
+    }
+    if (e.type === 'agent-name' && e.agentName) name = e.agentName;
+    else if (e.type === 'custom-title' && e.customTitle && !name)
+      name = e.customTitle;
+    // A subagent's turns are written to the same transcript; they do not grow this session.
+    if (e.type !== 'assistant' || e.isSidechain) continue;
+    const u = e.message?.usage;
+    if (!u) continue;
+    context =
+      (u.input_tokens ?? 0) +
+      (u.cache_read_input_tokens ?? 0) +
+      (u.cache_creation_input_tokens ?? 0);
+    model = e.message.model ?? model;
+    at = e.timestamp ?? at;
+  }
+  return { name, model, context, at };
+}
+
+/**
+ * What to do about a lane. Busy lanes over `rotateAt` rotate at their next PR boundary; while the
+ * user is away a lane keeps working until `awayAt`, because a rotation nobody is there to restart
+ * leaves work sitting.
+ */
+export function verdict(
+  context,
+  { rotateAt = 300_000, awayAt = 450_000, away = false } = {},
+) {
+  if (context === null) return 'no turns yet';
+  if (away)
+    return context >= awayAt ? 'over the away line: keep reads tight' : 'ok';
+  return context >= rotateAt ? 'rotate at its next PR boundary' : 'ok';
+}
