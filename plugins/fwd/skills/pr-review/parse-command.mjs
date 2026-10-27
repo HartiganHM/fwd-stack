@@ -65,6 +65,9 @@ export function simpleCommands(cmd) {
         const end = substitutionEnd(cmd, i);
         const body = ch === '`' ? cmd.slice(i + 1, end) : cmd.slice(i + 2, end);
         substitutions.push(...simpleCommands(body));
+        // Its output is unknown here, so the word keeps a `$`: `"4$(printf 2)"` must never read
+        // as PR 4.
+        word += '$';
         i = end;
       } else if (ch === '\\' && quote === '"' && i + 1 < cmd.length)
         word += cmd[++i];
@@ -175,6 +178,15 @@ function mergeOf(words) {
       i += words[i] === '-R' || words[i] === '--repo' ? 2 : 1;
     return i;
   };
+  // Every repository selector must be a plain owner/name: `--repo "$TARGET"` or `--repo
+  // host/o/r` names a repository the gate cannot read, so the merge is unreadable.
+  const selectors = words.flatMap((w, k) =>
+    w === '-R' || w === '--repo'
+      ? [words[k + 1] ?? '']
+      : (w.match(/^(?:--repo=|-R)(.+)$/)?.slice(1) ?? []),
+  );
+  if (selectors.some((v) => !new RegExp(`^${REPO}$`).test(v)))
+    return unreadable;
   let i = skipRepoFlags(gh + 1);
   if (words[i] !== 'pr') {
     // Something other than a repository flag before the subcommand: if this is a merge at all,
@@ -196,10 +208,12 @@ function mergeOf(words) {
     }
     if (BOOLEAN_FLAGS.has(a) || isRepoFlag(a) || /^--[a-z-]+=/.test(a))
       continue;
-    if (a.startsWith('-')) return unreadable;
+    if (a.startsWith('-') || a.includes('$')) return unreadable;
     if (pr !== null) return unreadable; // a second positional: not a form gh takes
     const n = a.match(/^#?(\d+)$/);
-    const url = a.match(new RegExp(`github\\.com/(${REPO})/pull/(\\d+)`));
+    const url = a.match(
+      new RegExp(`^https?://github\\.com/(${REPO})/pull/(\\d+)/?$`),
+    );
     if (n) pr = n[1];
     else if (url) [pr, prRepo] = [url[2], url[1]];
     else return unreadable; // a branch name, or anything else
@@ -266,6 +280,9 @@ function innerCommandLine(words) {
 // command never lends its repository to another). A `GH_REPO=` set on a shell wrapper is the
 // default for the commands it runs, as it is in their environment.
 export function parseCommand(cmd, depth = 0, inheritedRepo = null) {
+  // `export GH_REPO=o/r; gh pr merge 42` sets the default in a command before the merge, which
+  // this hook runs ahead of. A merge that names no repository of its own then cannot be read.
+  const exported = depth === 0 && /\bGH_REPO=/.test(cmd);
   return simpleCommands(cmd).flatMap((words) => {
     const inner = depth < 3 ? innerCommandLine(words) : null;
     if (inner !== null) {
@@ -276,7 +293,11 @@ export function parseCommand(cmd, depth = 0, inheritedRepo = null) {
     }
     const gated = gatedIn(words);
     if (!gated) return [];
-    return [{ ...gated, repo: gated.repo ?? inheritedRepo }];
+    const repo = gated.repo ?? inheritedRepo;
+    const ownAssignment = words.some((w) => w.startsWith('GH_REPO='));
+    if (gated.action === 'merge' && !repo && exported && !ownAssignment)
+      return [{ ...gated, pr: null, repo: null }];
+    return [{ ...gated, repo }];
   });
 }
 

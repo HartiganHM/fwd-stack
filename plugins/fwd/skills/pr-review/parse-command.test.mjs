@@ -286,6 +286,22 @@ test('a git merge after another gh command is not a PR merge', () => {
   assert.equal(unaccountedMerges('gh pr view 1 && git merge main'), 0);
 });
 
+test('an expansion or an unreadable selector makes the merge unreadable', () => {
+  for (const cmd of [
+    'gh pr merge "4$(printf 2)" --squash',
+    'gh pr merge $PR --squash',
+    'gh pr merge 42 --repo "$TARGET_REPO"',
+    'gh pr merge 42 --repo github.com/o/r',
+    'gh pr merge fix/github.com/o/r/pull/42 --squash',
+    'export GH_REPO=o/r; gh pr merge 42 --squash',
+  ])
+    assert.ok(unaccountedMerges(cmd) > 0, cmd);
+  // A GH_REPO on the merge itself is its own repository, and stays readable.
+  assert.deepEqual(parseCommand('GH_REPO=o/r gh pr merge 42'), [
+    merge('42', 'o/r'),
+  ]);
+});
+
 test('anything else is not gated', () => {
   assert.deepEqual(parseCommand('git status'), []);
   assert.deepEqual(parseCommand('gh pr view 42'), []);
