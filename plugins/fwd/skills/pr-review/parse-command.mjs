@@ -118,7 +118,9 @@ function substitutionEnd(cmd, start) {
 const repoIn = (words) => {
   // Only a word that IS an API path: `repos/a/b/pulls/7` quoted inside a --body value is text.
   for (const w of words) {
-    const path = w.match(new RegExp(`^/?repos/(${REPO})/pulls/`));
+    const path = w.match(
+      new RegExp(`^(?:https://api\\.github\\.com)?/?repos/(${REPO})/pulls/`),
+    );
     if (path) return path[1];
   }
   for (let i = 0; i < words.length; i++) {
@@ -141,30 +143,68 @@ const repoIn = (words) => {
 
 // The PR a `gh … pr merge` names: a number (`42` or `#42`) or a pull URL, wherever it sits
 // among the flags. A branch name, or nothing (the current branch), yields no PR.
+// Flags `gh pr merge` takes with no value. With VALUE_FLAGS this is the whole allowlist: any other
+// option (a cluster such as `-st 9`, a flag this table does not know) makes the merge unreadable
+// rather than risking a value being read as the PR.
+const BOOLEAN_FLAGS = new Set([
+  '-s',
+  '--squash',
+  '-m',
+  '--merge',
+  '-r',
+  '--rebase',
+  '-d',
+  '--delete-branch',
+  '--auto',
+  '--disable-auto',
+  '--admin',
+]);
+const isRepoFlag = (w) =>
+  w === '-R' || w === '--repo' || /^(?:--repo=|-R)\S/.test(w);
+
 function mergeOf(words) {
   // By basename, so `/usr/local/bin/gh` is gh too.
   const gh = words.findIndex((w) => w.split('/').at(-1) === 'gh');
   if (gh === -1) return null;
-  // gh's own flags may come before the subcommand: `gh -R o/r pr merge 42`.
-  let i = gh + 1;
-  while (i < words.length && words[i].startsWith('-'))
-    i += VALUE_FLAGS.has(words[i]) ? 2 : 1;
-  if (words[i] !== 'pr' || words[i + 1] !== 'merge') return null;
   const repo = repoIn(words);
-  for (let j = i + 2; j < words.length; j++) {
+  const unreadable = { action: 'merge', pr: null, repo };
+  // Only a repository flag may sit before `pr` or between `pr` and `merge`
+  // (`gh -R o/r pr merge 42`, `gh pr --repo=o/r merge 42`).
+  const skipRepoFlags = (i) => {
+    while (i < words.length && isRepoFlag(words[i]))
+      i += words[i] === '-R' || words[i] === '--repo' ? 2 : 1;
+    return i;
+  };
+  let i = skipRepoFlags(gh + 1);
+  if (words[i] !== 'pr') {
+    // Something other than a repository flag before the subcommand: if this is a merge at all,
+    // it is not one the gate can read.
+    return words.slice(i).includes('merge') && words.slice(i).includes('pr')
+      ? unreadable
+      : null;
+  }
+  i = skipRepoFlags(i + 1);
+  if (words[i] !== 'merge')
+    return words.slice(i).includes('merge') ? unreadable : null;
+  let pr = null;
+  let prRepo = null;
+  for (let j = i + 1; j < words.length; j++) {
     const a = words[j];
     if (VALUE_FLAGS.has(a)) {
       j++;
       continue;
     }
-    if (a.startsWith('-')) continue;
+    if (BOOLEAN_FLAGS.has(a) || isRepoFlag(a) || /^--[a-z-]+=/.test(a))
+      continue;
+    if (a.startsWith('-')) return unreadable;
+    if (pr !== null) return unreadable; // a second positional: not a form gh takes
     const n = a.match(/^#?(\d+)$/);
-    if (n) return { action: 'merge', pr: n[1], repo };
     const url = a.match(new RegExp(`github\\.com/(${REPO})/pull/(\\d+)`));
-    if (url) return { action: 'merge', pr: url[2], repo: url[1] };
-    return { action: 'merge', pr: null, repo };
+    if (n) pr = n[1];
+    else if (url) [pr, prRepo] = [url[2], url[1]];
+    else return unreadable; // a branch name, or anything else
   }
-  return { action: 'merge', pr: null, repo };
+  return pr ? { action: 'merge', pr, repo: prRepo ?? repo } : unreadable;
 }
 
 function gatedIn(words) {
@@ -176,7 +216,11 @@ function gatedIn(words) {
   // The REST form of a merge (`gh api -X PUT repos/O/R/pulls/N/merge`) never spells
   // `gh pr merge`, and it is how orchestrated lanes merge.
   const rest = words
-    .map((w) => w.match(/^\/?repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/merge$/))
+    .map((w) =>
+      w.match(
+        /^(?:https:\/\/api\.github\.com)?\/?repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/merge$/,
+      ),
+    )
     .find(Boolean);
   if (rest) return { action: 'merge', pr: rest[1], repo: repoIn(words) };
   // Two re-request shapes. The raw API call carries the PR in its path. A project wrapper hides
@@ -245,9 +289,15 @@ export function parseCommand(cmd, depth = 0, inheritedRepo = null) {
 // message is denied too; rephrase it.) This is not a security boundary, only a check that an
 // agent cannot skip by accident.
 export function unaccountedMerges(cmd) {
+  // Counted on the text with quotes and line continuations removed, so `gh pr 'merge'` is a
+  // mention too and a merge the parser did read cannot cancel one it did not.
+  const plain = cmd.replace(/\\\n/g, ' ').replace(/['"\\]/g, ' ');
   const mentioned =
-    (cmd.match(/\bpr\s+merge\b/g) ?? []).length +
-    (cmd.match(/pulls\/\d+\/merge\b/g) ?? []).length;
+    (
+      plain.match(
+        /\bpr\s+(?:(?:-R|--repo)\s+\S+\s+|--repo=\S+\s+|-R\S+\s+)*merge\b/g,
+      ) ?? []
+    ).length + (plain.match(/pulls\/\d+\/merge\b/g) ?? []).length;
   const merges = parseCommand(cmd).filter((g) => g.action === 'merge');
   const unresolved = merges.filter((g) => !g.pr).length;
   const read = merges.length - unresolved;

@@ -249,6 +249,43 @@ test('a merge the tokenizer finds but cannot resolve is unreadable, whatever its
     assert.ok(unaccountedMerges(cmd) > 0, cmd);
 });
 
+test('a full API URL keeps its repository', () => {
+  assert.deepEqual(
+    parseCommand(
+      'gh api -X POST https://api.github.com/repos/o/r/pulls/42/requested_reviewers --input -',
+    ),
+    [rerequest('42', 'o/r')],
+  );
+});
+
+test('a repository flag between pr and merge is read', () => {
+  assert.deepEqual(parseCommand('gh pr -R o/r merge 42 --squash'), [
+    merge('42', 'o/r'),
+  ]);
+  assert.deepEqual(parseCommand('gh pr --repo=o/r merge 42'), [
+    merge('42', 'o/r'),
+  ]);
+});
+
+test('an option the allowlist does not know makes the merge unreadable', () => {
+  for (const cmd of [
+    'gh pr merge -st 9 42',
+    'gh pr merge --some-new-flag 42',
+    'gh --verbose pr merge 42',
+  ])
+    assert.ok(unaccountedMerges(cmd) > 0, cmd);
+});
+
+test('a merge that was read cannot cancel one that was not', () => {
+  const cmd =
+    "gh pr 'merge' 41 --squash; cat <<'EOF'\ndon't\nEOF\ngh pr merge 42 --squash";
+  assert.ok(unaccountedMerges(cmd) > 0);
+});
+
+test('a git merge after another gh command is not a PR merge', () => {
+  assert.equal(unaccountedMerges('gh pr view 1 && git merge main'), 0);
+});
+
 test('anything else is not gated', () => {
   assert.deepEqual(parseCommand('git status'), []);
   assert.deepEqual(parseCommand('gh pr view 42'), []);
