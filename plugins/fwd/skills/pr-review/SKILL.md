@@ -5,6 +5,9 @@ description: Use when running a GitHub Copilot review cycle on a pull request �
 
 # pr-review
 
+**First, read the project's own rules.** If `.claude/fwd/pr-review.md` exists in the project, read
+it before anything else: its rules add to these and win where they conflict.
+
 Canonical policy for GitHub Copilot review cycles and PR structure.
 
 **This skill governs whether the code was read. It does not, and cannot, tell you
@@ -82,8 +85,8 @@ same over-built surface fixed five times instead of deleted once, and a settled
 push-back re-argued from scratch thirteen times.
 
 Review itself pays. In the same runs it caught a 62px nav rail that every column
-calculation in a design package had ignored, `Æ` surviving NFD normalisation so a
-diacritic-folding search would never match `Æther`, iOS Safari zooming on sub-16px
+calculation in a design package had ignored, `ø` surviving NFD normalisation so a
+diacritic-folding search for "Soren" would never match "Søren", iOS Safari zooming on sub-16px
 inputs in a layout whose whole arithmetic depended on it not doing that, a
 "fixed height" row that excluded its own child's margin, and a test asserting a
 `requestAnimationFrame` callback without flushing one — which passed with the fix
@@ -267,8 +270,8 @@ nothing.
 
 **"Cannot break production" is a rule about rounds, not about value.** The
 severity floor decides whether another review is owed — nothing more. One round-1
-probe finding was a latent false failure that would have fired on any deck holding
-an artless card; it was worth more than most Mediums. Fix these properly, sweep
+probe finding was a latent false failure that would have fired on any list holding
+an item with no image; it was worth more than most Mediums. Fix these properly, sweep
 their class, mutation-check them. Just do not buy a round with them.
 
 A **successful round** is one with no new inline comment and no new suppressed
@@ -287,9 +290,10 @@ is why that rule exists and it still holds in that direction: **the header can
 lower a round's weight, never raise it**, and it never excuses reading the
 findings.
 
-**Findings on a design handoff are not findings.** Anything under `design/` is a
-non-engineer's drawing package — audited for readiness, ratified by Product, and
-a record of what they decided. A code reviewer's opinion on it carries no weight
+**Findings on a design handoff are not findings** — where a project keeps design
+handoffs under `design/` owned by a separate design process (as the gate assumes).
+There, a handoff is audited for readiness and is a record of what that process
+decided. A code reviewer's opinion on it carries no weight
 in a round, and acting on one edits somebody else's document. Fix the CODE the
 handoff describes and leave the handoff to its own process; if one genuinely
 contradicts a shipped ruling, that is an errata note for the next design round,
@@ -316,7 +320,7 @@ discount them rather than counting them against the round.
   section of the PR body, exactly as `## Settled` names declined ones. Without
   that marker the gate scores the round substantive and the prose here is a dead
   letter: one PR spent two extra rounds because round 4's only finding was a
-  parameter named `seedable` while its caller passed `tickable`. PR-description↔code mismatches,
+  parameter named `retryable` while its caller passed `resumable`. PR-description↔code mismatches,
   stale comments, plan-doc references, migration-number drift — fix them
   same-round, they're cheap, but the round still counts as successful. Any
   finding revealing an actual behaviour, type or logic issue is not doc-sync and
@@ -344,7 +348,7 @@ discount them rather than counting them against the round.
   product, not doc-sync. One such PR took twelve findings across two rounds, every
   one a factual error in prose, in a diff that renders nothing: a caption naming
   two wrong glyphs and a wrong subject, a badge whose caption taught the opposite
-  of the badge, a `short N` described as counting decks when it counts copies.
+  of the badge, a `low N` described as counting orders when it counts units.
   Every one of those ships to a reader. Ask what the PR delivers, then read the
   rows.
   | Anything Copilot itself calls non-blocking or a nit | No |
@@ -372,7 +376,7 @@ discount them rather than counting them against the round.
   prints the previous round's finding text beside the current one so a repeated
   CAUSE is visible even when it lands on different files. If you claim a class
   is swept, a grep command produced that claim — one run declared a plural class
-  swept by eye and missed `1 set · 1 cards`, every collection's first state.
+  swept by eye and missed `1 file · 1 items`, every new account's first state.
 
 ## 6 · Push-backs: once, in writing, machine-visible
 
@@ -412,7 +416,7 @@ settles, never in a later one:
 ```markdown
 ## Settled
 
-- `src/lib/decks/fill.ts` (round 1): "inject a canonical basic…". Ruled the next PR.
+- `src/lib/orders/fill.ts` (round 1): "add a fallback line item…". Ruled the next PR.
 - `novelty.ts` (rounds 3, 5): the surface is tested; five mutation-checked cases.
 ```
 
@@ -452,13 +456,17 @@ line, as above.
 
 ## 7 · Convergence: watch the surface, not the round count
 
-**There is no hard round cap.** Rounds 8+ still return genuine defects, including
-defects introduced by the previous round's fixes, on docs PRs as well as code.
-One PR's last eight rounds produced seven genuine findings out of eight; a cap at
-12 would have shipped a 44px touch target that existed in the class list and
-nowhere on screen, clipped by an `overflow-x-auto` parent, plus a sticky head
-that still moved under the reader's thumb. A docs-only PR was still finding real
-arithmetic errors at round 8.
+**There is no early cap on rounds worth fixing — and there is a hard stop at
+twelve.** Below the stop, a round is never refused for its number: rounds 8+
+still return genuine defects, including defects introduced by the previous
+round's fixes, on docs PRs as well as code. One PR's last eight rounds produced
+seven genuine findings out of eight, among them a 44px touch target that existed
+in the class list and nowhere on screen, clipped by an `overflow-x-auto` parent,
+plus a sticky head that still moved under the reader's thumb. A docs-only PR was
+still finding real arithmetic errors at round 8. Late rounds find real defects;
+that is why the stop is at twelve and not lower. At twelve scored rounds (errored
+and stale reviews do not count) or 4 hours in review, requesting stops and the PR
+merges with what is outstanding reported — see the end of this section.
 
 What predicts "stop" is not the round number. It is whether findings land on
 **new surface or the same one**.
@@ -480,7 +488,7 @@ review keeps relitigating.
 **Value decays sharply by round, and the shape is consistent.** Across three
 measured runs, rounds 1–2 returned the security holes and the missing surfaces;
 rounds 7+ returned successive refinements of one word's semantics. That is not
-an argument for a hard cap — round 9 on one PR here returned a real bundle
+an argument for a lower cap — round 9 on one PR here returned a real bundle
 defect — but it is an argument for raising the bar as rounds accumulate: **after
 round 6, only a Critical or High finding in production code earns another
 round.** Everything else is fixed, pushed and merged.
@@ -528,7 +536,7 @@ line, because the three-round rule watches a single PATH and will not see it whe
 the findings move between a component and two probes.
 
 **Twelve rounds is a hard stop on requesting, not a reminder to check in.** At
-round 12: stop requesting. Fix anything outstanding that is Crit/High/Med in
+round 12 (scored rounds only; errored and stale reviews do not count): stop requesting. Fix anything outstanding that is Crit/High/Med in
 production code, merge, and report what you left and why. There is no round 13.
 The same applies at 4 hours open in review, whichever comes first.
 
@@ -546,7 +554,8 @@ probe.
   not meet it if a finding landed between them. This is deliberate: a finding
   proves the previous clean rounds were reading code that has since changed.
 - **§7's hard stop is a third door out of this bar.** At twelve rounds or four hours the bar is
-  released, because §7 forbids the only thing that could satisfy it: asking for another round.
+  released, because §7 forbids the only thing that could satisfy it: asking for another round —
+  except on a destructive path, where the hard stop ends requesting but the merge waits for the user.
   Left as separate rules the two deadlock, and the gate ends up printing both "merge and report"
   and its own refusal to allow it. Copilot re-posting threads it cannot resolve is what makes that
   reachable — a finding fixed in round 2 comes back every round after and marks each one dirty.
@@ -557,7 +566,9 @@ probe.
   the gate can grant. One PR had two textbook cases and used neither for exactly
   that reason.
 - **1 round also suffices when the last fix touched only copy strings and their
-  tests**, on the same reasoning as §9's doc-only rule: two verification rounds
+  tests.** The gate recognises copy by its default copy-module path,
+  `src/lib/copy/**`; strings kept in any other layout are scored as product code,
+  and this bar does not apply to them. The reasoning is §9's doc-only rule: two verification rounds
   is ~25 minutes to confirm a sentence, and a string cannot break a contract the
   way a branch can.
 - **A PR the USER reviewed themselves needs one clean round, not two.** Put a
@@ -636,7 +647,9 @@ runtime.
 - Draw the scope line explicitly when findings start landing on staleness the PR
   did not create. Say so in the PR body and merge.
 - **A round landing only on copy strings needs one clean round, not two** — on
-  a code PR as well. A copy module (the gate reads `src/lib/copy/**`) cannot break a
+  a code PR as well. A copy module (the gate reads `src/lib/copy/**`, the default
+  copy-module path it recognises; copy kept in any other layout is scored as
+  product code, so this bar does not apply to it) cannot break a
   contract the way a branch can, and a project that runs a copy-drift check in CI covers the
   drift case, so two rounds is ~25
   minutes to confirm a sentence. The gate applies this automatically.
@@ -708,18 +721,18 @@ These stop the findings.**
 Every one of the five below was paid for by a real round on that feature.
 
 1. **Every raw `sql` template gets a probe before the PR opens.** Typecheck
-   cannot see inside a template literal. One PR shipped `pr.released_at` — a
+   cannot see inside a template literal. One PR shipped `o.shipped_at` — a
    column that lives on another table — and the route would have 500'd for every
    visitor. The probe written afterwards, at review's insistence, caught it on
    its first run. If a query is worth writing by hand, it is worth running once.
 
 2. **Never hand-roll a query when a loader exists.** A hand-written price CTE
-   cost three rounds of foil / staleness / liveness semantics and was then
-   replaced wholesale by `loadPrices`, which already encoded all of it. Before
+   cost three rounds of currency / staleness / liveness semantics and was then
+   replaced wholesale by an existing `loadRates` loader, which already encoded all of it. Before
    writing SQL, grep for a reader of the same table.
 
 3. **Load the real route, not the component.** A link built specifically for the
-   player with no collection never rendered for them, because the page returns
+   user with no saved items never rendered for them, because the page returns
    its empty state before mounting the bar that holds it. The component test
    passed. Routes have gates that components do not.
 
@@ -740,12 +753,13 @@ Items 1–5 are the author checking their own work, which is the weakest form of
 review there is: the person who wrote the code already believes it. So one more
 step, immediately before `gh pr create`:
 
-**This dispatch is pre-authorized; you do not need to ask.** Most sessions carry
-a system-prompt line forbidding subagent use unless the user requested it, and it
-outranks this skill — correctly. The user granted standing authorization for this
-one dispatch on 2026-09-15, for the duration of the trial, after an agent stopped
-rather than run it. The grant covers **this** pass and nothing else; any other
-subagent use still needs asking, and the grant ends when the verdict lands.
+**This dispatch needs the user's authorization for subagent use.** Most sessions
+carry a system-prompt line forbidding subagent use unless the user requested it,
+and it outranks this skill — correctly; this document cannot grant it. A project
+grants it standing by saying so in its `AGENTS.md` / `CLAUDE.md` (or in
+`.claude/fwd/pr-review.md`). Without that grant, ask the user once, and if they
+decline, skip the pass. A grant covers **this** pass and nothing else; any other
+subagent use still needs asking.
 
 **Dispatch a general-purpose subagent with `${CLAUDE_PLUGIN_ROOT}/skills/pr-review/precheck-prompt.md` as its prompt.**
 Not a fork. A fork inherits this conversation — it knows what you meant, and

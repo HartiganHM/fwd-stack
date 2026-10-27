@@ -729,10 +729,13 @@ say(
 // a doc-only PR: two rounds is ~25 minutes to confirm a sentence.
 const isCopy = (p) => p.startsWith('src/lib/copy/');
 const lastScored = scored.at(-1);
+// Judged on the round that broke the clean streak: by the time a clean round has landed, the last
+// scored round has no findings, and judging that one made the one-round copy bar unreachable.
+const lastFinding = scored.at(-1 - cleanStreak);
 const copyOnlyRound = Boolean(
-  lastScored &&
-  lastScored.count > 0 &&
-  lastScored.paths.every((p) => isCopy(p) || isDeclined(p, lastScored.n)),
+  lastFinding &&
+  lastFinding.count > 0 &&
+  lastFinding.paths.every((p) => isCopy(p) || isDeclined(p, lastFinding.n)),
 );
 const humanReviewApplies = Boolean(humanReviewer) && !destructive;
 
@@ -775,9 +778,11 @@ const hardStop = scored.length >= 12 || (openedHours >= 4 && scored.length > 0);
 // At four consecutive rounds on one path the re-request is BLOCKED until the PR
 // body records the decision in `## Settled`. Recording it is the escape, because
 // the thing that ends an oscillation is a ruling, not another patch.
+// Over SCORED rounds: a stale or errored review is discarded unread (§3, §4), so it cannot move a
+// file toward the four-round block.
 const consecutive = (path) => {
   let n = 0;
-  for (const r of [...rounds].reverse()) {
+  for (const r of [...scored].reverse()) {
     if (r.paths.includes(path)) n += 1;
     else break;
   }
@@ -791,7 +796,7 @@ const consecutive = (path) => {
 const added = new Set(
   files.filter((f) => f.status === 'added').map((f) => f.filename),
 );
-const oscillating = [...new Set(rounds.flatMap((r) => r.paths))]
+const oscillating = [...new Set(scored.flatMap((r) => r.paths))]
   // Any mention releases it, whatever round: this escape records a RULING, and
   // discounts no finding.
   .filter((p) => consecutive(p) >= 4 && !mentions(settled, p) && !added.has(p));
@@ -800,10 +805,17 @@ const oscillating = [...new Set(rounds.flatMap((r) => r.paths))]
 // fixing them and pushing IS the way out. Without this the two rules deadlock —
 // no re-request allowed, and no clean round can ever arrive.
 const softFixed = Boolean(
-  last && last.count > 0 && roundWeight(last) === 'soft' && stale,
+  last &&
+  last.count > 0 &&
+  roundWeight(last) === 'soft' &&
+  stale &&
+  !destructive,
 );
+// §7's hard stop releases the merge bar, except on a destructive path: there requesting stops,
+// but the merge waits for the user rather than shipping a delete on an unconfirmed round.
+const hardStopReleases = hardStop && !destructive;
 say(
-  barMet || softFixed || hardStop,
+  barMet || softFixed || hardStopReleases,
   'merge bar        ',
   barMet
     ? `${cleanStreak} successful round(s) trailing, need ${needed} §8`
@@ -856,7 +868,7 @@ if (rounds.length > 3 && addedLate.length) {
 if (hardStop) {
   warn(
     'hard stop        ',
-    `round ${rounds.length}, open ${openedHours.toFixed(1)}h — stop requesting, merge and report §7`,
+    `round ${scored.length}, open ${openedHours.toFixed(1)}h — stop requesting, merge and report §7`,
   );
 }
 
@@ -899,7 +911,7 @@ if (onHeadBranch) {
       `no cold-eyes record for ${localBranch}. §10b: before \`gh pr create\`, dispatch a general-purpose ` +
         `subagent with ${join(here, 'precheck-prompt.md')}, then ` +
         `\`node ${quote(join(here, 'precheck.mjs'))} record <file|->\`. ` +
-        `Pre-authorized in AGENTS.md — run it on EVERY PR while the trial is open, not the uncertain ones`,
+        `Run it on EVERY PR while the trial is open, not the uncertain ones (it needs the subagent grant a project gives in AGENTS.md or .claude/fwd/pr-review.md; without one, ask once)`,
     );
   } else {
     say(true, 'pre-open pass    ', 'recorded §10b');
@@ -971,7 +983,12 @@ if (action === 'merge') {
       'your local branch is ahead of the PR head — you would be merging without your last commits.',
     );
   }
-  if (!barMet && !softFixed && !hardStop) {
+  if (hardStop && destructive && !barMet) {
+    blocks.push(
+      'hard stop on a destructive path: requesting has ended, but this diff deletes or overwrites ' +
+        'user data, so the merge waits for the user to confirm it (§8).',
+    );
+  } else if (!barMet && !softFixed && !hardStop) {
     blocks.push(
       `bar not met: ${cleanStreak} clean round(s), need ${needed}. Last SCORED round ` +
         `(${lastScored ? `#${lastScored.n}` : 'none'}) landed on ` +
@@ -994,7 +1011,7 @@ if (action === 'rerequest') {
   }
   if (hardStop) {
     blocks.push(
-      `round ${rounds.length}, open ${openedHours.toFixed(1)}h — §7's hard stop. There is no round ${rounds.length + 1}: fix what is Crit/High/Med in the product tree, merge, and report the rest.`,
+      `round ${scored.length}, open ${openedHours.toFixed(1)}h — §7's hard stop. There is no round ${scored.length + 1}: fix what is Crit/High/Med in the product tree, merge, and report the rest.`,
     );
   }
   if (barMet) {
@@ -1018,7 +1035,7 @@ if (action === 'rerequest') {
   // so when the merge is blocked for want of a clean round, the request is the
   // legal move rather than the forbidden one.
   const mergeBlocked =
-    !barMet && !softFixed && !hardStop && oscillating.length === 0;
+    !barMet && !softFixed && !hardStopReleases && oscillating.length === 0;
   // §7: four consecutive rounds on one existing surface is a scope decision, and another round is
   // the one move that cannot make it. Record the ruling in `## Settled` to release this.
   if (oscillating.length > 0) {
@@ -1063,10 +1080,17 @@ if (blocks.length) {
   // it by trying both.
   if (action) {
     const otherAllowed =
-      action === 'merge'
+      oscillating.length === 0 &&
+      (action === 'merge'
         ? !hardStop && !barMet
-        : barMet || softFixed || hardStop;
-    if (!otherAllowed) {
+        : barMet || softFixed || hardStopReleases);
+    if (!otherAllowed && oscillating.length > 0) {
+      console.log(
+        "NOTE: both actions are blocked by §7's four-round rule. The exit is a scope ruling in the " +
+          "PR body's `## Settled` naming the file, not another round.",
+      );
+      console.log('');
+    } else if (!otherAllowed) {
       console.log(
         'NOTE: the other action is blocked too. That is a gate contradiction, not a rule — ' +
           "§8's diminishing-returns clause is the intended exit: merge on one clean round " +
