@@ -302,6 +302,18 @@ test('an expansion or an unreadable selector makes the merge unreadable', () => 
   ]);
 });
 
+test('any expansion in a gated command makes it unreadable', () => {
+  for (const cmd of [
+    'gh api -X PUT "repos/$OWNER/$REPOSITORY/pulls/42/' + 'mer' + 'ge"',
+    'GH_REPO="$TARGET_REPO" gh pr merge 42 --squash',
+  ])
+    assert.ok(unaccountedMerges(cmd) > 0, cmd);
+  const rr = parseCommand(
+    'gh api -X POST "repos/$O/$R/pulls/42/requested_reviewers"',
+  );
+  assert.equal(rr[0].pr, null);
+});
+
 test('anything else is not gated', () => {
   assert.deepEqual(parseCommand('git status'), []);
   assert.deepEqual(parseCommand('gh pr view 42'), []);

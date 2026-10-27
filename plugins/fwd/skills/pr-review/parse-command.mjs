@@ -222,6 +222,16 @@ function mergeOf(words) {
 }
 
 function gatedIn(words) {
+  const gated = gatedWords(words);
+  // Any expansion left in a gated command (`$OWNER`, `"$TARGET_REPO"`, a substitution's `$`)
+  // stands for a value the hook cannot see: the PR, the repository or both. The whole class is
+  // unreadable, so it is denied rather than checked against a guess.
+  if (gated && words.some((w) => w.includes('$')))
+    return { ...gated, pr: null };
+  return gated;
+}
+
+function gatedWords(words) {
   // A merge whose PR the parser cannot resolve is still reported, with pr null, so it is
   // counted as unreadable rather than dropped.
   const merge = mergeOf(words);
@@ -294,7 +304,9 @@ export function parseCommand(cmd, depth = 0, inheritedRepo = null) {
     const gated = gatedIn(words);
     if (!gated) return [];
     const repo = gated.repo ?? inheritedRepo;
-    const ownAssignment = words.some((w) => w.startsWith('GH_REPO='));
+    const ownAssignment = words.some((w) =>
+      new RegExp(`^GH_REPO=${REPO}$`).test(w),
+    );
     if (gated.action === 'merge' && !repo && exported && !ownAssignment)
       return [{ ...gated, pr: null, repo: null }];
     return [{ ...gated, repo }];
@@ -330,7 +342,10 @@ if (
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
   const cmd = process.argv[2] ?? '';
-  if (unaccountedMerges(cmd) > 0) console.log('unreadable');
-  for (const g of parseCommand(cmd))
+  const parsed = parseCommand(cmd);
+  // A re-request the parser cannot attribute is denied the same way as a merge.
+  if (unaccountedMerges(cmd) > 0 || parsed.some((g) => !g.pr))
+    console.log('unreadable');
+  for (const g of parsed)
     if (g.pr) console.log([g.action, g.pr, g.repo].filter(Boolean).join(' '));
 }

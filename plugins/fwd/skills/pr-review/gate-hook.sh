@@ -39,7 +39,7 @@ if printf '%s\n' "$gated" | grep -qx 'unreadable'; then
     hookSpecificOutput: {
       hookEventName: "PreToolUse",
       permissionDecision: "deny",
-      permissionDecisionReason: ("pr-review gate: this command mentions a merge the gate cannot attribute to a PR, so it cannot check the merge bar. Run the merge as its own plain command, `gh pr merge <number> [--repo owner/name] [flags]` or `gh api -X PUT repos/<owner>/<name>/pulls/<number>/merge`, with no wrapper, substitution or heredoc around it. A merge of the current branch must name its number. If the text only MENTIONS a merge (a heredoc, a message), rephrase it.")
+      permissionDecisionReason: ("pr-review gate: this command mentions a merge or a review re-request the gate cannot attribute to a PR and repository, so it cannot check the bar. Run the merge as its own plain command, `gh pr merge <number> [--repo owner/name] [flags]` or `gh api -X PUT repos/<owner>/<name>/pulls/<number>/merge`, with no wrapper, substitution or heredoc around it. A merge of the current branch must name its number. If the text only MENTIONS a merge (a heredoc, a message), rephrase it.")
     }
   }'
   exit 0
