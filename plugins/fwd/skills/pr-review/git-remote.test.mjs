@@ -14,12 +14,14 @@ test('https and ssh remotes, with or without .git, name the same repository', ()
     'https://github.com/O/r.js',
     'git@github.com:O/r.js.git',
     'ssh://git@github.com/O/r.js.git\n',
+    'ssh://git@github.com:22/O/r.js.git',
+    'git@github-personal:O/r.js.git',
   ])
     assert.equal(repoFromRemoteUrl(url), 'O/r.js');
 });
 
-test('a remote that is not GitHub names nothing', () => {
-  assert.equal(repoFromRemoteUrl('https://gitlab.com/o/r.git'), null);
+test('something that is not a remote URL names nothing', () => {
+  assert.equal(repoFromRemoteUrl('not a url'), null);
   assert.equal(repoFromRemoteUrl(''), null);
 });
 

@@ -20,10 +20,25 @@
 // the entry adds that round. That is the §6 escape valve kept visible: each
 // round the author discounts is written in the PR body.
 
-// Any extension the gate can score a finding on, shell scripts included: a Settled line naming a
-// `.sh` file used to be ignored, so a ruling on a shell script could never release its block.
-const PATH =
-  /`([^`\s]+\.(?:m?[jt]sx?|mts|cts|md|mdx|json|txt|css|sql|ya?ml|sh|bash|py|html))`/g;
+// A backticked file path. The gate can score a finding on any file, so any token with a `/`
+// counts, and a bare filename counts by its extension or its name: a list of a dozen extensions
+// once ignored a Settled line naming a `.sh` file, so its ruling could never release its block.
+// A dotted identifier with no slash (`page.evaluate`) is code, not a path.
+const PATH = /`([^`\s]+)`/g;
+const FILE_EXT =
+  /\.(?:m?[jt]sx?|mts|cts|md|mdx|json|txt|css|scss|sass|less|sql|ya?ml|toml|ini|env|sh|bash|zsh|py|rb|go|rs|java|kt|swift|php|html|svg|graphql|prisma|lock)$/;
+const isPathLike = (t) =>
+  !/[()]/.test(t) &&
+  !/^https?:/.test(t) &&
+  (t.includes('/') ||
+    FILE_EXT.test(t) ||
+    /^(?:Dockerfile|Makefile|Procfile|\.env.*)$/.test(t));
+const pathsIn = (text) =>
+  [...text.matchAll(PATH)]
+    .map((m) => m[1])
+    .filter(isPathLike)
+    .map((raw) => raw.replace(/^\.\//, ''));
+
 const ROUNDS = /\brounds?\s+(\d+(?:\s*(?:,|&|and|to|-|–|—)\s*\d+)*)/gi;
 
 const section = (body, heading) =>
@@ -68,9 +83,7 @@ export function parseSettled(body) {
     const rounds = roundsOn(line);
     // A line naming one file twice is still one decline: counting each mention let a single
     // entry discount two findings on that file.
-    const paths = new Set(
-      [...line.matchAll(PATH)].map(([, raw]) => raw.replace(/^\.\//, '')),
-    );
+    const paths = new Set(pathsIn(line));
     for (const path of paths) {
       const prior = settled.get(path);
       lines.set(path, [
@@ -89,11 +102,7 @@ export function parseSettled(body) {
 
 /** Paths a `## Doc-sync` section names. Unchanged: doc-sync is not round-scoped. */
 export function parseDocSync(body) {
-  return new Set(
-    [...section(body, 'Doc-sync').matchAll(PATH)].map((m) =>
-      m[1].replace(/^\.\//, ''),
-    ),
-  );
+  return new Set(pathsIn(section(body, 'Doc-sync')));
 }
 
 const base = (p) => p.split('/').pop();

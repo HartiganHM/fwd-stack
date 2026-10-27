@@ -2,11 +2,11 @@
 // PR's own repository. Kept out of pr-gate.mjs so a test can import it (the gate runs on import).
 
 export function repoFromRemoteUrl(url) {
+  // The last two path segments, whatever the host: `git@github-personal:O/r.git` (an SSH host
+  // alias) and `ssh://git@github.com:22/O/r.git` name O/r as surely as the https form does.
   const m = (url ?? '')
     .trim()
-    .match(
-      /github\.com[:/]([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/,
-    );
+    .match(/[:/]([A-Za-z0-9._-]+)\/([A-Za-z0-9._-]+?)(?:\.git)?\/?$/);
   return m ? `${m[1]}/${m[2]}` : null;
 }
 

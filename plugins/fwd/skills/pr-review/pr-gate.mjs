@@ -572,9 +572,12 @@ const say = (ok, rule, detail) =>
 const warn = (rule, detail) => console.log(`warn  ${rule}  ${detail}`);
 const blocks = [];
 
+// A file is prose or generated, never both: `docs/drizzle/meta/…` must leave the runtime count once.
 const proseLines = files
   .filter(
-    (f) => isDoc(f.filename) || isHandoff(f.filename) || isCopyPath(f.filename),
+    (f) =>
+      !isGenerated(f.filename) &&
+      (isDoc(f.filename) || isHandoff(f.filename) || isCopyPath(f.filename)),
   )
   .reduce((t, f) => t + f.additions + f.deletions, 0);
 const generatedLines = files
@@ -840,7 +843,11 @@ if (onHeadBranch) {
   let recorded = false;
   try {
     recorded = JSON.parse(readFileSync(ledger, 'utf8')).entries.some(
-      (e) => e.branch === localBranch && entryMatchesRepo(e, repo),
+      // Rows carry the repository of the checkout that recorded them, which on a fork PR is
+      // the head repository, not the base this gate reads the PR from.
+      (e) =>
+        e.branch === localBranch &&
+        entryMatchesRepo(e, prData.head.repo?.full_name ?? repo),
     );
   } catch {
     /* no ledger yet */

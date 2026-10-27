@@ -34,11 +34,13 @@ const die = (m) => {
   process.exit(1);
 };
 
-const [cmd, ...rest] = process.argv.slice(2);
+const [cmd, ...argv] = process.argv.slice(2);
+// `--repo=` is read below and never taken as a positional argument by any command.
+const rest = argv.filter((a) => !a.startsWith('--repo='));
 
 // The repository this checkout belongs to, or `--repo=o/r` when scoring from elsewhere. Rows
 // carry it so two repositories' branch names and PR numbers never share a row.
-const repoFlag = rest.find((a) => a.startsWith('--repo='))?.slice(7);
+const repoFlag = argv.find((a) => a.startsWith('--repo='))?.slice(7);
 const currentRepo = () => {
   if (repoFlag) return repoFlag;
   try {
@@ -139,8 +141,7 @@ if (cmd === 'score') {
       !a.startsWith('--kind=') &&
       !a.startsWith('--fixed=') &&
       !a.startsWith('--shipped=') &&
-      !a.startsWith('--era=') &&
-      !a.startsWith('--repo='),
+      !a.startsWith('--era='),
   );
   const kind = rest
     .find((a) => a.startsWith('--kind='))

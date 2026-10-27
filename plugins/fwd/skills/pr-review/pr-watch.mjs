@@ -37,9 +37,12 @@ const minutes = Number(flag('--minutes') ?? 29);
 const intervalMs = Number(flag('--interval') ?? 45) * 1000;
 
 const gh = (path, jq) => {
+  // Bounded, so a cycle's three reads fit the 30s `fitsAnotherPoll` budgets for them: a hung call
+  // would otherwise carry the last cycle past Monitor's cap. A timeout is a failed read, retried.
   const out = execFileSync('gh', ['api', path, ...(jq ? ['--jq', jq] : [])], {
     encoding: 'utf8',
     maxBuffer: 32 * 1024 * 1024,
+    timeout: 9_000,
   });
   return JSON.parse(out);
 };
@@ -60,10 +63,11 @@ function snapshot() {
     `repos/${repo}/pulls/${pr}/reviews?per_page=100`,
     '[.[] | select(.user.type == "Bot") | {id, commit_id, submitted_at, body}]',
   );
-  // Copilot's own review run is a workflow too; CI is every other run on the head.
+  // Copilot's own review run is a workflow too; CI is every other run on the head. Matched on name
+  // or path, the same test as ci-state.mjs's isReviewerRun, so the watcher and the gate agree.
   const ciRuns = gh(
     `repos/${repo}/actions/runs?head_sha=${p.head}&per_page=100`,
-    '[.workflow_runs[] | select(.name | test("copilot"; "i") | not) | {head_sha, status, conclusion, name}]',
+    '[.workflow_runs[] | select(((.name // "") + " " + (.path // "")) | test("copilot"; "i") | not) | {head_sha, status, conclusion, name}]',
   );
   return {
     state: p.merged ? 'merged' : p.state,

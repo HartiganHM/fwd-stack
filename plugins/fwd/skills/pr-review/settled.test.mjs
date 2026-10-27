@@ -166,3 +166,18 @@ test('a shell script can be settled', () => {
   ];
   assert.equal(isDeclinedIn(settled, 'scripts/gate-hook.sh', 2, rounds), true);
 });
+
+test('a path counts whatever its extension, and extensionless build files count by name', () => {
+  const settled = parseSettled(
+    body(
+      '- (round 1) `Cargo.toml`, `apps/crawler/Dockerfile`, `Dockerfile` and `infra/main.go`: declined.',
+    ),
+  );
+  for (const p of [
+    'Cargo.toml',
+    'apps/crawler/Dockerfile',
+    'Dockerfile',
+    'infra/main.go',
+  ])
+    assert.equal(mentions(settled, p), true, p);
+});
