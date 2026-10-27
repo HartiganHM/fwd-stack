@@ -26,16 +26,18 @@ export const refPath = (ref) =>
   ref.split('/').map(encodeURIComponent).join('/');
 
 // Whether the local checkout is the PR's head: `origin` is the head repository, or the branch
-// tracks the head repository's remote, or it tracks the PR's own ref (`gh pr checkout` of a fork
-// PR inside the base repository tracks `refs/pull/<n>/head`). A same-named branch of an
-// unrelated repository is none of these.
+// tracks the head repository's remote, or it tracks the PR's own ref from the PR's BASE
+// repository (`gh pr checkout` of a fork PR inside the base repository tracks
+// `refs/pull/<n>/head` there). Pull numbers are unique only within a repository, so a pull ref
+// tracked from anywhere else, or a same-named branch of an unrelated repository, is none of these.
 export const checkoutIsPr = ({
   originRepo,
   upstreamRepo,
   mergeRef,
   headRepo,
+  baseRepo,
   pr,
 }) =>
   sameRepo(originRepo, headRepo) ||
   sameRepo(upstreamRepo, headRepo) ||
-  mergeRef === `refs/pull/${pr}/head`;
+  (mergeRef === `refs/pull/${pr}/head` && sameRepo(upstreamRepo, baseRepo));

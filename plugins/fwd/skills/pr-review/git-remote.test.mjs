@@ -47,22 +47,34 @@ test('a branch name is encoded per segment for a REST path', () => {
 });
 
 test('a fork PR checked out in the base repository is the PR head; an unrelated repo is not', () => {
-  const head = { headRepo: 'me/r', pr: '7' };
-  assert.equal(checkoutIsPr({ ...head, originRepo: 'me/r' }), true);
+  const pr = { headRepo: 'me/r', baseRepo: 'up/r', pr: '7' };
+  const pull = 'refs/pull/7/head';
+  assert.equal(checkoutIsPr({ ...pr, originRepo: 'me/r' }), true);
   assert.equal(
-    checkoutIsPr({ ...head, originRepo: 'up/r', upstreamRepo: 'me/r' }),
-    true,
-  );
-  assert.equal(
-    checkoutIsPr({ ...head, originRepo: 'up/r', mergeRef: 'refs/pull/7/head' }),
+    checkoutIsPr({ ...pr, originRepo: 'up/r', upstreamRepo: 'me/r' }),
     true,
   );
   assert.equal(
     checkoutIsPr({
-      ...head,
-      originRepo: 'other/x',
-      mergeRef: 'refs/heads/main',
+      ...pr,
+      originRepo: 'up/r',
+      upstreamRepo: 'up/r',
+      mergeRef: pull,
     }),
+    true,
+  );
+  // Another repository's pull #7 is a different PR.
+  assert.equal(
+    checkoutIsPr({
+      ...pr,
+      originRepo: 'other/x',
+      upstreamRepo: 'other/x',
+      mergeRef: pull,
+    }),
+    false,
+  );
+  assert.equal(
+    checkoutIsPr({ ...pr, originRepo: 'other/x', mergeRef: 'refs/heads/main' }),
     false,
   );
 });

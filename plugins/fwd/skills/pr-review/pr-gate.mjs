@@ -573,6 +573,7 @@ const isPrCheckout = checkoutIsPr({
   upstreamRepo: repoFromRemoteUrl(upstreamUrl),
   mergeRef,
   headRepo: prData.head.repo?.full_name,
+  baseRepo: prData.base.repo?.full_name,
   pr,
 });
 const onHeadBranch = Boolean(
@@ -875,7 +876,10 @@ if (onHeadBranch) {
       // the head repository, not the base this gate reads the PR from.
       (e) =>
         e.branch === localBranch &&
-        entryMatchesRepo(e, prData.head.repo?.full_name ?? repo),
+        // The recorder tags a row with its checkout's origin: the head repository, or the
+        // base repository for a fork PR checked out there. Either is this PR's.
+        (entryMatchesRepo(e, prData.head.repo?.full_name ?? repo) ||
+          entryMatchesRepo(e, prData.base.repo?.full_name ?? repo)),
     );
   } catch {
     /* no ledger yet */
