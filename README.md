@@ -17,6 +17,7 @@ The design and the reasoning behind it are in the
 | `packages/commitlint-config`    | Conventional commits with the shared type list                                                |
 | `.github/workflows/node-ci.yml` | Reusable CI gate: install, then typecheck, lint, test and build                               |
 | `baseline.json`                 | The majors every project is held to (Node, pnpm, Next, React, Zod, Vitest, Sentry, Drizzle …) |
+| `plugins/fwd`                   | Claude Code plugin: the shared agent skills and their guard hooks                             |
 | `tests/`                        | Proves each config loads and enforces what it claims                                          |
 
 Planned, in order: the `stack` generator with opt-in capabilities, `stack doctor` (drift against
@@ -55,6 +56,30 @@ jobs:
     with:
       scripts: typecheck lint test build
 ```
+
+## The Claude Code plugin
+
+This repo is also a Claude Code plugin marketplace. The `fwd` plugin carries the skills and hooks
+every project's agents share, so each repo runs the same review gate instead of its own copy.
+
+```sh
+/plugin install fwd --marketplace HartiganHM/fwd-stack
+```
+
+That one-step form needs Claude Code 2.1.275 or later. On an earlier version, add the
+marketplace first:
+
+```sh
+/plugin marketplace add HartiganHM/fwd-stack
+/plugin install fwd@fwd-stack
+```
+
+| Skill       | What it does                                                                       |
+| ----------- | ---------------------------------------------------------------------------------- |
+| `pr-review` | The review gate (`pr-gate.mjs`), watcher and merge hook. The skill text lands next |
+
+State the skills keep, such as the pre-open pass ledger, lives in the plugin's data folder
+(`~/.claude/plugins/data/fwd-fwd-stack/`), never in this repo.
 
 ## Working on the kit
 
