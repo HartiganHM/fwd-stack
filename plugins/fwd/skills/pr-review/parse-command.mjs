@@ -48,6 +48,11 @@ export function simpleCommands(cmd) {
   };
   for (let i = 0; i < cmd.length; i++) {
     const ch = cmd[i];
+    // A backslash-newline is a line continuation, removed before anything else reads the line.
+    if (ch === '\\' && cmd[i + 1] === '\n' && quote !== "'") {
+      i++;
+      continue;
+    }
     if (quote) {
       if (ch === quote) quote = null;
       else if (ch === '\\' && quote === '"' && i + 1 < cmd.length)
@@ -60,8 +65,11 @@ export function simpleCommands(cmd) {
       word ??= '';
     } else if (ch === '\\' && i + 1 < cmd.length) {
       word = (word ?? '') + cmd[++i];
-    } else if (ch === ';' || ch === '\n' || ch === '|' || ch === '&') {
+    } else if (';\n|&()`'.includes(ch)) {
+      // Command separators, and the grouping and substitution marks that start a new command:
+      // `(…)`, `$(…)` and backticks run their contents as commands of their own.
       if ((ch === '&' || ch === '|') && cmd[i + 1] === ch) i++;
+      if (ch === '(' && word === '$') word = null;
       endCommand();
     } else if (/\s/.test(ch)) {
       endWord();
@@ -73,7 +81,13 @@ export function simpleCommands(cmd) {
   return commands;
 }
 
+// A command's repository, most explicit first: an API path, then `-R`/`--repo`, then a
+// `GH_REPO=` that only sets the default.
 const repoIn = (words) => {
+  for (const w of words) {
+    const path = w.match(new RegExp(`repos/(${REPO})/pulls/`));
+    if (path) return path[1];
+  }
   for (let i = 0; i < words.length; i++) {
     const w = words[i];
     if (
@@ -81,10 +95,12 @@ const repoIn = (words) => {
       new RegExp(`^${REPO}$`).test(words[i + 1] ?? '')
     )
       return words[i + 1];
-    const eq = w.match(new RegExp(`^(?:--repo=|GH_REPO=)(${REPO})$`));
+    const eq = w.match(new RegExp(`^--repo=(${REPO})$`));
     if (eq) return eq[1];
-    const path = w.match(new RegExp(`repos/(${REPO})/pulls/`));
-    if (path) return path[1];
+  }
+  for (const w of words) {
+    const env = w.match(new RegExp(`^GH_REPO=(${REPO})$`));
+    if (env) return env[1];
   }
   return null;
 };
@@ -136,8 +152,26 @@ function gatedIn(words) {
 
 // Every gated command in the line, each with the repository its own words name (a flag on one
 // command never lends its repository to another).
-export function parseCommand(cmd) {
-  return simpleCommands(cmd).map(gatedIn).filter(Boolean);
+// `bash -c '…'`, `sh -lc '…'`, `zsh -c '…'` and `eval '…'` run their argument as a command line,
+// so it is parsed as one rather than read as a single quoted word.
+const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash']);
+function innerCommandLine(words) {
+  const at = words.findIndex(
+    (w) => SHELLS.has(w.split('/').at(-1)) || w === 'eval',
+  );
+  if (at === -1) return null;
+  if (words[at] === 'eval') return words.slice(at + 1).join(' ');
+  const flag = words.findIndex((w, i) => i > at && /^-[a-z]*c[a-z]*$/.test(w));
+  return flag === -1 ? null : (words[flag + 1] ?? null);
+}
+
+export function parseCommand(cmd, depth = 0) {
+  return simpleCommands(cmd).flatMap((words) => {
+    const inner = depth < 3 ? innerCommandLine(words) : null;
+    if (inner !== null) return parseCommand(inner, depth + 1);
+    const gated = gatedIn(words);
+    return gated ? [gated] : [];
+  });
 }
 
 if (

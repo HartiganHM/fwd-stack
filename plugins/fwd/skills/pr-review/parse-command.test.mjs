@@ -120,6 +120,39 @@ test('the repository comes from --repo, --repo= or GH_REPO when the path has non
   ]);
 });
 
+test('a backslash-newline continuation joins the line, as a shell does', () => {
+  assert.deepEqual(parseCommand('gh pr merge \\\n  42 --squash'), [
+    merge('42'),
+  ]);
+});
+
+test('a subshell, a command substitution or backticks still run the merge', () => {
+  assert.deepEqual(parseCommand('(gh pr merge 42 --squash)'), [merge('42')]);
+  assert.deepEqual(parseCommand('x=$(gh pr merge 42)'), [merge('42')]);
+  assert.deepEqual(parseCommand('echo `gh pr merge 42`'), [merge('42')]);
+});
+
+test('a shell wrapper or eval is parsed as the command line it runs', () => {
+  assert.deepEqual(parseCommand("bash -c 'gh pr merge 42 --squash'"), [
+    merge('42'),
+  ]);
+  assert.deepEqual(parseCommand('/bin/zsh -lc "cd x && gh pr merge 42"'), [
+    merge('42'),
+  ]);
+  assert.deepEqual(parseCommand("eval 'gh pr merge 42'"), [merge('42')]);
+  assert.deepEqual(parseCommand('bash scripts/build.sh 42'), []);
+});
+
+test('an explicit repository wins over GH_REPO', () => {
+  assert.deepEqual(parseCommand('GH_REPO=a/b gh pr merge 42 --repo c/d'), [
+    merge('42', 'c/d'),
+  ]);
+  assert.deepEqual(
+    parseCommand('GH_REPO=a/b gh api -X PUT repos/c/d/pulls/42/merge'),
+    [merge('42', 'c/d')],
+  );
+});
+
 test('anything else is not gated', () => {
   assert.deepEqual(parseCommand('git status'), []);
   assert.deepEqual(parseCommand('gh pr view 42'), []);
