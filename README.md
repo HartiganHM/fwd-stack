@@ -66,9 +66,9 @@ every project's agents share, so each repo runs the same review gate instead of 
 /plugin install fwd --marketplace HartiganHM/fwd-stack
 ```
 
-| Skill       | What it does                                                                   |
-| ----------- | ------------------------------------------------------------------------------ |
-| `pr-review` | The Copilot review cycle and merge bar, computed by `pr-gate.mjs` and its hook |
+| Skill       | What it does                                                                       |
+| ----------- | ---------------------------------------------------------------------------------- |
+| `pr-review` | The review gate (`pr-gate.mjs`), watcher and merge hook. The skill text lands next |
 
 State the skills keep, such as the pre-open pass ledger, lives in the plugin's data folder
 (`~/.claude/plugins/data/fwd-fwd-stack/`), never in this repo.

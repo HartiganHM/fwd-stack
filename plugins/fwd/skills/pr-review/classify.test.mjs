@@ -5,10 +5,10 @@ import assert from 'node:assert/strict';
 import { isDocOnly } from './classify.mjs';
 
 const handoff = [
-  'design/design_handoff_the99_desktop_nav_labels/README.md',
-  'design/design_handoff_the99_desktop_nav_labels/ShellFrame.dc.html',
-  'design/design_handoff_the99_desktop_nav_labels/art/hero-master.png',
-  'design/design_handoff_the99_desktop_nav_labels/support.js',
+  'design/design_handoff_app_nav_labels/README.md',
+  'design/design_handoff_app_nav_labels/ShellFrame.dc.html',
+  'design/design_handoff_app_nav_labels/art/hero-master.png',
+  'design/design_handoff_app_nav_labels/support.js',
 ];
 
 test('a design/-only handoff PR is doc-only', () => {

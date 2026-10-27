@@ -10,17 +10,20 @@ const body = (settled) =>
 test("a bare entry for round 1 does not discount round 3's new High on the same file", () => {
   const settled = parseSettled(
     body(
-      '**`src/lib/decks/fill.ts` — "inject a canonical basic…"** Correct, and ruled as the next PR.',
+      '**`src/lib/orders/fill.ts` — "add a fallback line item…"** Correct, and ruled as the next PR.',
     ),
   );
   const rounds = [
-    { n: 1, paths: ['src/lib/decks/fill.ts'] },
-    { n: 2, paths: ['src/app/decks/actions.ts'] },
-    { n: 3, paths: ['src/lib/decks/fill.ts'] },
+    { n: 1, paths: ['src/lib/orders/fill.ts'] },
+    { n: 2, paths: ['src/app/orders/actions.ts'] },
+    { n: 3, paths: ['src/lib/orders/fill.ts'] },
   ];
-  assert.equal(isDeclinedIn(settled, 'src/lib/decks/fill.ts', 1, rounds), true);
   assert.equal(
-    isDeclinedIn(settled, 'src/lib/decks/fill.ts', 3, rounds),
+    isDeclinedIn(settled, 'src/lib/orders/fill.ts', 1, rounds),
+    true,
+  );
+  assert.equal(
+    isDeclinedIn(settled, 'src/lib/orders/fill.ts', 3, rounds),
     false,
   );
 });
@@ -97,15 +100,15 @@ test('an API call in backticks is not a path', () => {
 test("a round named in the entry's prose is not part of its declaration", () => {
   const settled = parseSettled(
     body(
-      "- **(round 3) `src/lib/edhrec/seed-index.ts`: a run killed between the first clear and the role pass…** Declined. That publish deletes them in its own transaction (round 2's fix).",
+      "- **(round 3) `src/lib/catalog/seed-index.ts`: a run killed between the clear and the rebuild…** Declined. That publish deletes them in its own transaction (round 2's fix).",
     ),
   );
   const rounds = [1, 2, 3].map((n) => ({
     n,
-    paths: ['src/lib/edhrec/seed-index.ts'],
+    paths: ['src/lib/catalog/seed-index.ts'],
   }));
   const on = (n) =>
-    isDeclinedIn(settled, 'src/lib/edhrec/seed-index.ts', n, rounds);
+    isDeclinedIn(settled, 'src/lib/catalog/seed-index.ts', n, rounds);
   assert.deepEqual([1, 2, 3].map(on), [false, false, true]);
 });
 
