@@ -116,8 +116,9 @@ function substitutionEnd(cmd, start) {
 // A command's repository, most explicit first: an API path, then `-R`/`--repo`, then a
 // `GH_REPO=` that only sets the default.
 const repoIn = (words) => {
+  // Only a word that IS an API path: `repos/a/b/pulls/7` quoted inside a --body value is text.
   for (const w of words) {
-    const path = w.match(new RegExp(`repos/(${REPO})/pulls/`));
+    const path = w.match(new RegExp(`^/?repos/(${REPO})/pulls/`));
     if (path) return path[1];
   }
   for (let i = 0; i < words.length; i++) {
@@ -171,7 +172,9 @@ function gatedIn(words) {
   const text = words.join(' ');
   // The REST form of a merge (`gh api -X PUT repos/O/R/pulls/N/merge`) never spells
   // `gh pr merge`, and it is how orchestrated lanes merge.
-  const rest = text.match(/pulls\/(\d+)\/merge\b/);
+  const rest = words
+    .map((w) => w.match(/^\/?repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/merge$/))
+    .find(Boolean);
   if (rest) return { action: 'merge', pr: rest[1], repo: repoIn(words) };
   // Two re-request shapes. The raw API call carries the PR in its path. A project wrapper hides
   // that call inside a script, so the hook only sees the script name and its arguments — one
@@ -230,10 +233,28 @@ export function parseCommand(cmd, depth = 0, inheritedRepo = null) {
   });
 }
 
+// FAIL CLOSED. Shell is too rich to parse completely: heredocs, redirections, substitutions in
+// every position, wrapper options. Three review rounds each found new forms, and every form the
+// parser misread was a merge the hook ALLOWED. So instead of chasing them, the hook counts the
+// merges the raw text mentions and the merges the parser could attribute to a PR; when the text
+// mentions more, the command is unreadable and is denied with the form to use instead. A miss
+// now costs a rewritten command, never an ungated merge. (A mention in a heredoc or a commit
+// message is denied too; rephrase it.) This is not a security boundary, only a check that an
+// agent cannot skip by accident.
+export function unaccountedMerges(cmd) {
+  const mentioned =
+    (cmd.match(/\bpr\s+merge\b/g) ?? []).length +
+    (cmd.match(/pulls\/\d+\/merge\b/g) ?? []).length;
+  const read = parseCommand(cmd).filter((g) => g.action === 'merge').length;
+  return Math.max(0, mentioned - read);
+}
+
 if (
   process.argv[1] &&
   import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
-  for (const g of parseCommand(process.argv[2] ?? ''))
+  const cmd = process.argv[2] ?? '';
+  if (unaccountedMerges(cmd) > 0) console.log('unreadable');
+  for (const g of parseCommand(cmd))
     console.log([g.action, g.pr, g.repo].filter(Boolean).join(' '));
 }

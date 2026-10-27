@@ -2,7 +2,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseCommand, simpleCommands } from './parse-command.mjs';
+import {
+  parseCommand,
+  simpleCommands,
+  unaccountedMerges,
+} from './parse-command.mjs';
 
 const merge = (pr, repo = null) => ({ action: 'merge', pr, repo });
 const rerequest = (pr, repo = null) => ({ action: 'rerequest', pr, repo });
@@ -53,9 +57,11 @@ test('a pull URL names both the PR and its repository', () => {
   );
 });
 
-test('a merge naming no number (current branch or a branch name) is not gated', () => {
-  assert.deepEqual(parseCommand('gh pr merge --squash'), []);
-  assert.deepEqual(parseCommand('gh pr merge feat/x --squash'), []);
+test('a merge naming no number (current branch or a branch name) is unreadable, so denied', () => {
+  for (const cmd of ['gh pr merge --squash', 'gh pr merge feat/x --squash']) {
+    assert.deepEqual(parseCommand(cmd), []);
+    assert.equal(unaccountedMerges(cmd), 1, cmd);
+  }
 });
 
 test('every gated command in a chain is reported, not only the first', () => {
@@ -194,6 +200,37 @@ test('GH_REPO on a shell wrapper is the default for what it runs', () => {
     parseCommand("GH_REPO=a/b bash -c 'gh pr merge 42 -R c/d'"),
     [merge('42', 'c/d')],
   );
+});
+
+// Round 3 of review found six more shell forms. Each is either read correctly or counted as
+// unreadable (and denied); none may come back as an empty, allowed result.
+test('forms the parser cannot read fail closed instead of passing', () => {
+  for (const cmd of [
+    "cat <<'EOF'\ndon't\nEOF\ngh pr merge 42 --squash",
+    'gh pr merge --squash --match-head-commit $(git rev-parse HEAD) 42',
+    'gh pr merge --squash 2>/dev/null 42',
+    `result="$(printf ')'; gh pr merge 42 --squash)"`,
+    "env -u FOO bash -c 'gh pr merge 42 --squash'",
+  ]) {
+    const read = parseCommand(cmd).filter((g) => g.action === 'merge');
+    assert.ok(
+      read.some((g) => g.pr === '42') || unaccountedMerges(cmd) > 0,
+      cmd,
+    );
+  }
+});
+
+test('a repository path inside a flag value is text, not the target', () => {
+  assert.deepEqual(
+    parseCommand("gh pr merge 42 -R o/r --body 'See repos/a/b/pulls/7/'"),
+    [merge('42', 'o/r')],
+  );
+});
+
+test('every merge the text mentions is accounted for when the parser reads them all', () => {
+  assert.equal(unaccountedMerges('gh pr merge 1 && gh pr merge 2'), 0);
+  assert.equal(unaccountedMerges('gh api -X PUT repos/o/r/pulls/4/merge'), 0);
+  assert.equal(unaccountedMerges('git merge main'), 0);
 });
 
 test('anything else is not gated', () => {
