@@ -129,6 +129,22 @@ function substitutionEnd(cmd, start) {
   return cmd.length;
 }
 
+// The `NAME=value` words a command starts with: its environment. A `GH_REPO=` anywhere later is an
+// argument (`--body GH_REPO=a/b`, a script's own parameter), not an assignment.
+const leadingAssignments = (words) => {
+  const out = [];
+  for (const w of words) {
+    if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(w)) out.push(w);
+    else break;
+  }
+  return out;
+};
+const ghRepoOf = (words) =>
+  leadingAssignments(words)
+    .map((w) => w.match(/^GH_REPO=(.*)$/)?.[1])
+    .filter((v) => v !== undefined)
+    .at(-1);
+
 // A command's repository, most explicit first: an API path, then `-R`/`--repo`, then a
 // `GH_REPO=` that only sets the default.
 const repoIn = (words) => {
@@ -150,11 +166,8 @@ const repoIn = (words) => {
     const eq = w.match(new RegExp(`^(?:--repo=|-R)(${REPO})$`));
     if (eq) return eq[1];
   }
-  for (const w of words) {
-    const env = w.match(new RegExp(`^GH_REPO=(${REPO})$`));
-    if (env) return env[1];
-  }
-  return null;
+  const env = ghRepoOf(words);
+  return env && new RegExp(`^${REPO}$`).test(env) ? env : null;
 };
 
 // The PR a `gh … pr merge` names: a number (`42` or `#42`) or a pull URL, wherever it sits
@@ -305,21 +318,37 @@ function innerCommandLine(words) {
 export function parseCommand(cmd, depth = 0, inheritedRepo = null) {
   // `export GH_REPO=o/r; gh pr merge 42` sets the default in a command before the merge, which
   // this hook runs ahead of. A merge that names no repository of its own then cannot be read.
-  const exported = depth === 0 && /\bGH_REPO=/.test(cmd);
+  const exported =
+    depth === 0 &&
+    simpleCommands(cmd).some(
+      (words) =>
+        // `export GH_REPO=…`, or a command that is nothing but assignments (`GH_REPO=…;`).
+        (words[0] === 'export' &&
+          words.some((w) => w.startsWith('GH_REPO='))) ||
+        (words.length > 0 &&
+          leadingAssignments(words).length === words.length &&
+          words.some((w) => w.startsWith('GH_REPO='))),
+    );
   return simpleCommands(cmd).flatMap((words) => {
     const inner = depth < 3 ? innerCommandLine(words) : null;
     if (inner !== null) {
-      const env = words
-        .map((w) => w.match(new RegExp(`^GH_REPO=(${REPO})$`))?.[1])
-        .find(Boolean);
+      const raw = ghRepoOf(words);
+      // A wrapper's GH_REPO that is not a plain owner/name (`github.com/o/r`) cannot be read.
+      if (raw !== undefined && !new RegExp(`^${REPO}$`).test(raw))
+        return parseCommand(inner, depth + 1, null).map((g) => ({
+          ...g,
+          pr: null,
+        }));
+      const env = raw;
       return parseCommand(inner, depth + 1, env ?? inheritedRepo);
     }
     const gated = gatedIn(words);
     if (!gated) return [];
     const repo = gated.repo ?? inheritedRepo;
-    const ownAssignment = words.some((w) =>
-      new RegExp(`^GH_REPO=${REPO}$`).test(w),
-    );
+    const own = ghRepoOf(words);
+    if (own !== undefined && !new RegExp(`^${REPO}$`).test(own))
+      return [{ ...gated, pr: null, repo: null }];
+    const ownAssignment = own !== undefined;
     if (gated.action === 'merge' && !repo && exported && !ownAssignment)
       return [{ ...gated, pr: null, repo: null }];
     return [{ ...gated, repo }];

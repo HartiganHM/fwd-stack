@@ -352,6 +352,23 @@ test('a redirection is not an argument', () => {
   assert.equal(unreadableLine(doc), false);
 });
 
+test('only a leading GH_REPO is an assignment, and its value must be owner/name', () => {
+  assert.equal(
+    unreadableLine("GH_REPO=github.com/o/r bash -c 'gh pr merge 42'"),
+    true,
+  );
+  assert.equal(unreadableLine('GH_REPO=github.com/o/r gh pr merge 42'), true);
+  assert.deepEqual(parseCommand("bash -c 'gh pr merge 42' GH_REPO=a/b"), [
+    merge('42'),
+  ]);
+  assert.deepEqual(parseCommand('gh pr merge 42 --body GH_REPO=a/b'), [
+    merge('42'),
+  ]);
+  assert.deepEqual(parseCommand("GH_REPO=a/b bash -c 'gh pr merge 42'"), [
+    merge('42', 'a/b'),
+  ]);
+});
+
 test('anything else is not gated', () => {
   assert.deepEqual(parseCommand('git status'), []);
   assert.deepEqual(parseCommand('gh pr view 42'), []);
