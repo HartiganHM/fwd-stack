@@ -3,12 +3,25 @@
 // layered after these.
 export const sharedTypeScriptRules = {
   'no-unused-vars': 'off',
+  // An underscore marks a name as deliberately unused: an argument, a caught error, a
+  // destructured value dropped on purpose (`const { id: _drop, ...rest } = row`).
   '@typescript-eslint/no-unused-vars': [
     'error',
-    { argsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' },
+    {
+      argsIgnorePattern: '^_',
+      caughtErrorsIgnorePattern: '^_',
+      varsIgnorePattern: '^_',
+      destructuredArrayIgnorePattern: '^_',
+      ignoreRestSiblings: true,
+    },
   ],
   '@typescript-eslint/no-explicit-any': 'warn',
-  '@typescript-eslint/consistent-type-imports': 'error',
+  // `typeof import('./module')` stays legal: Vitest's `vi.importActual<typeof import(...)>` and
+  // `vi.mock` factories need it, and both apps use them.
+  '@typescript-eslint/consistent-type-imports': [
+    'error',
+    { disallowTypeAnnotations: false },
+  ],
 };
 
 export const sharedIgnores = {

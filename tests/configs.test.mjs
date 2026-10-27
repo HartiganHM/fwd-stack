@@ -40,6 +40,31 @@ test('the node preset reports an unused variable and allows an underscored one',
   assert.match(result.messages[0].message, /'dead'/);
 });
 
+test('the node preset allows the deliberate-unused and type-import idioms both apps use', async () => {
+  const { default: config } = await import('@fwd-stack/eslint-config/node');
+  const eslint = new ESLint({
+    overrideConfigFile: true,
+    overrideConfig: config,
+  });
+  const [result] = await eslint.lintText(
+    [
+      "export type Fs = typeof import('node:fs');",
+      'export const strip = (row: { id: string; name: string }) => {',
+      '  const { id: _drop, ...rest } = row;',
+      '  const [_first, second] = [1, 2];',
+      '  const { name, ...others } = row;',
+      '  return { rest, second, others };',
+      '};',
+      '',
+    ].join('\n'),
+    { filePath: 'example.ts' },
+  );
+  assert.deepEqual(
+    result.messages.map((message) => `${message.ruleId}: ${message.message}`),
+    [],
+  );
+});
+
 test('the next preset applies the shared type-import rule', async () => {
   const { default: config } = await import('@fwd-stack/eslint-config/next');
   const eslint = new ESLint({
