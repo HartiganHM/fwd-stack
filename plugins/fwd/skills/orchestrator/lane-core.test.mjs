@@ -57,8 +57,9 @@ test("a subagent's turns in the same transcript do not count", () => {
 test('busy lanes rotate past 300k; while the user is away they run to 450k', () => {
   assert.equal(verdict(299_999), 'ok');
   assert.match(verdict(300_000), /rotate/);
-  assert.equal(verdict(400_000, { away: true }), 'ok');
-  assert.match(verdict(450_000, { away: true }), /away line/);
+  assert.equal(verdict(299_999, { away: true }), 'ok');
+  assert.match(verdict(400_000, { away: true }), /reads tight/);
+  assert.match(verdict(450_000, { away: true }), /away line: stop/);
   assert.equal(verdict(null), 'no turns yet');
   assert.match(verdict(200_000, { rotateAt: 150_000 }), /rotate/);
 });

@@ -2,16 +2,21 @@
 // The orchestrator's stall watchdog. Run it with the Bash tool's `run_in_background`: it polls
 // GitHub (no model cost) and EXITS only when something needs the orchestrator, and that exit is
 // what wakes the session:
-//   - an open PR has been quiet for `--stall` minutes (default 30), or
+//   - an open PR has been quiet for `--stall` minutes (default 30) and has not been reported since
+//     it went quiet (a state file in the temp directory remembers, so a re-arm does not exit on
+//     the same PR again), or
 //   - the hourly heartbeat, so idle lanes with queued work get checked even when nothing stalls.
 // On every exit it prints the stalled PRs and the lane-context table. Re-arm it after acting.
 // A foreground wait loop blocks the user's messages behind it; never run this in the foreground.
 //
 //   node watchdog.mjs [--repo owner/name] [--stall 30] [--heartbeat 60] [--interval 120]
 import { execFileSync } from 'node:child_process';
+import { readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { stalledPrs } from './watchdog-core.mjs';
+import { stalledPrs, unreported } from './watchdog-core.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name, dflt) => {
@@ -62,17 +67,34 @@ const report = (why, stalled) => {
   process.exit(0);
 };
 
+// Keyed by repository, or by the working directory when gh infers it.
+const seenFile = join(
+  tmpdir(),
+  `fwd-watchdog-${(repo ?? process.cwd()).replace(/[^A-Za-z0-9]/g, '-')}.json`,
+);
+const readSeen = () => {
+  try {
+    return JSON.parse(readFileSync(seenFile, 'utf8'));
+  } catch {
+    return {};
+  }
+};
+
 const until = Date.now() + heartbeat * 60_000;
 let failures = 0;
 for (;;) {
   try {
-    const stalled = stalledPrs(openPrs(), Date.now(), stall);
+    const seen = readSeen();
+    const stalled = unreported(stalledPrs(openPrs(), Date.now(), stall), seen);
     failures = 0;
-    if (stalled.length)
+    if (stalled.length) {
+      for (const p of stalled) seen[p.number] = p.updatedAt;
+      writeFileSync(seenFile, `${JSON.stringify(seen)}\n`);
       report(
         `${stalled.length} open PR(s) quiet for ${stall}+ minutes`,
         stalled,
       );
+    }
   } catch (e) {
     // A few failed reads are noise; a run of them is something the orchestrator should hear.
     if (++failures >= 5)

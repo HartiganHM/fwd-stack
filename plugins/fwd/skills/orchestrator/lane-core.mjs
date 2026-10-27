@@ -38,16 +38,21 @@ export function sessionSummary(jsonl) {
 }
 
 /**
- * What to do about a lane. Busy lanes over `rotateAt` rotate at their next PR boundary; while the
- * user is away a lane keeps working until `awayAt`, because a rotation nobody is there to restart
- * leaves work sitting.
+ * What to do about a lane. Busy lanes over `rotateAt` rotate at their next PR boundary. While the
+ * user is away a lane over `rotateAt` keeps working with tight reads, because a rotation nobody is
+ * there to restart leaves work sitting; at `awayAt` it stops at its next PR boundary with a handoff
+ * written, and the rotation waits for the user.
  */
 export function verdict(
   context,
   { rotateAt = 300_000, awayAt = 450_000, away = false } = {},
 ) {
   if (context === null) return 'no turns yet';
-  if (away)
-    return context >= awayAt ? 'over the away line: keep reads tight' : 'ok';
+  if (away) {
+    if (context >= awayAt)
+      return 'over the away line: stop at its next PR boundary, handoff written';
+    if (context >= rotateAt) return 'over rotateAt: keep working, reads tight';
+    return 'ok';
+  }
   return context >= rotateAt ? 'rotate at its next PR boundary' : 'ok';
 }

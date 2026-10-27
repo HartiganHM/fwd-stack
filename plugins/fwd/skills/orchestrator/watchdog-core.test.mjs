@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { stalledPrs } from './watchdog-core.mjs';
+import { stalledPrs, unreported } from './watchdog-core.mjs';
 
 const now = Date.parse('2026-10-27T21:00:00Z');
 const pr = (number, updatedAt, isDraft = false) => ({
@@ -31,4 +31,11 @@ test('an open PR quiet for 30 minutes or more is stalled, the quietest first', (
 
 test('a draft is not a lane waiting on anything', () => {
   assert.deepEqual(stalledPrs([pr(4, '2026-10-27T10:00:00Z', true)], now), []);
+});
+
+test('a stalled PR is reported once until something touches it again', () => {
+  const stalled = stalledPrs([pr(5, '2026-10-27T19:00:00Z')], now);
+  assert.equal(unreported(stalled).length, 1);
+  assert.deepEqual(unreported(stalled, { 5: '2026-10-27T19:00:00Z' }), []);
+  assert.equal(unreported(stalled, { 5: '2026-10-27T18:00:00Z' }).length, 1);
 });

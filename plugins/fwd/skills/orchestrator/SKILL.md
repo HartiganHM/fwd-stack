@@ -83,8 +83,9 @@ not session length, drives cost.
 - **Rotate a busy lane over `rotateAt` at its next PR merge:** it writes a handoff and gives the
   user a labelled restart prompt. A lane with no work gets no prompt; it just closes. Close idle
   lanes rather than keeping them in reserve. Rotate any lane that has run about 24 hours.
-- **While the user is away**, a lane over the line keeps working (to `awayAt`) with tight reads:
-  never stop a lane for a restart nobody can do. Queue the rotation for their return.
+- **While the user is away**, a lane over `rotateAt` keeps working with tight reads: never stop a
+  lane for a restart nobody can do before it has to. At `awayAt` it stops at its next PR boundary
+  with its handoff written. Either way, queue the rotation for the user's return.
 - Keep at most `maxOpusLanes` Opus lanes at once; put build lanes on Sonnet where the work allows.
 - Do audits and one-off jobs in short-lived subagents, not in lanes.
 
@@ -108,5 +109,5 @@ When a lane proposes spend (model calls, API quota, paid runs):
 - Name every lane by its session ID and its model, so the user can see who runs what.
 - Put a lane-context line in any report where a lane has crossed `rotateAt`.
 - **Every prompt the user is to paste** starts with a label line: `PROMPT FOR: <new Sonnet
-session, replaces lane 81 (deck stats)>`. One prompt per block; never leave the destination to
+session, replaces lane f5 (search filters)>`. One prompt per block; never leave the destination to
   be inferred.
