@@ -142,3 +142,38 @@ test('query tuning with no branch, and the Realtime secret, are guarded', () => 
     /exposes/,
   );
 });
+
+test('run_sql with quoting or comments the guard cannot read is denied', () => {
+  for (const sql of [
+    `select "setval"('s', 1)`,
+    'select $$--$$; drop table users',
+    'select 1 /* a /* nested */ ; drop table x */',
+    "select E'\\'; drop table x --'",
+  ])
+    assert.match(
+      neonDecision('run_sql', { branch_id: 'br-prod', sql }, prod),
+      /cannot read/,
+      sql,
+    );
+  assert.equal(
+    neonDecision(
+      'run_sql',
+      { branch_id: 'br-prod', sql: "select 'a' -- note" },
+      prod,
+    ),
+    null,
+  );
+});
+
+test('a protected id stays protected whatever its label', () => {
+  for (const label of [null, '', 0, false])
+    assert.match(
+      neonDecision(
+        'run_sql',
+        { branch_id: 'br-prod', sql: 'delete from users' },
+        { 'br-prod': label },
+      ),
+      /br-prod/,
+      String(label),
+    );
+});

@@ -63,7 +63,8 @@ export function neonDecision(tool, args = {}, protectedIds = {}) {
     .map(([, v]) => v.toLowerCase());
   let target = null;
   for (const [id, label] of Object.entries(protectedIds))
-    if (named.includes(id.toLowerCase())) target = label;
+    // By key: a project mapping a machine's id to a falsy label must not switch its guard off.
+    if (named.includes(id.toLowerCase())) target = label || id;
   const takesBranch =
     'branch_id' in args || tool.startsWith('run_sql') || TAKES_BRANCH.has(tool);
   if (!target && takesBranch && !args.branch_id && !args.endpoint_id)
@@ -80,10 +81,17 @@ export function neonDecision(tool, args = {}, protectedIds = {}) {
       ? `EXPLAIN ANALYZE executes the statement on ${target}.`
       : null;
   if (tool === 'run_sql') {
-    // Literals and comments in one pass, leftmost first: stripping comments before literals let
-    // a `--` inside a string swallow the rest of the statement, `; drop table` included.
-    const sql = String(args.sql ?? '')
-      .replace(/'(?:''|[^'])*'|--[^\n]*|\/\*[\s\S]*?\*\//g, (m) =>
+    const raw = String(args.sql ?? '');
+    // Fail closed on syntax this guard does not parse: a quoted identifier (`"setval"(…)` slips the
+    // function list), a dollar-quoted body (`$$--$$` reads as a comment and hides what follows), a
+    // block comment (they nest in PostgreSQL), or a backslash (E'' escapes). A read on a protected
+    // branch never needs them, and a tokenizer for all of them is a second SQL parser.
+    if (/["$\\]|\/\*/.test(raw))
+      return `run_sql on ${target} uses quoting or comments the guard cannot read; write the read without them.`;
+    // Literals and line comments in one pass, leftmost first: stripping comments before literals
+    // let a `--` inside a string swallow the rest of the statement, `; drop table` included.
+    const sql = raw
+      .replace(/'(?:''|[^'])*'|--[^\n]*/g, (m) =>
         m.startsWith("'") ? "''" : ' ',
       )
       .trim();

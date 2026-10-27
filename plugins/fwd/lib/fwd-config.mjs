@@ -15,6 +15,8 @@ import { readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
+const isObject = (v) => v && typeof v === 'object' && !Array.isArray(v);
+
 const readJson = (path) => {
   try {
     return JSON.parse(readFileSync(path, 'utf8'));
@@ -22,8 +24,9 @@ const readJson = (path) => {
     return {};
   }
 };
-
-const isObject = (v) => v && typeof v === 'object' && !Array.isArray(v);
+// Anything but a JSON object reads as no config: a `null` file made loadConfig throw, and the Neon
+// hook then exited without a decision, machine protection included.
+const asConfig = (v) => (isObject(v) ? v : {});
 
 export function mergeConfig(base, over) {
   const out = { ...base };
@@ -38,9 +41,9 @@ export function loadConfig(
   read = readJson,
 ) {
   const configDir = env.CLAUDE_CONFIG_DIR || join(home, '.claude');
-  const machine = read(join(configDir, 'fwd.json'));
+  const machine = asConfig(read(join(configDir, 'fwd.json')));
   const project = env.CLAUDE_PROJECT_DIR
-    ? read(join(env.CLAUDE_PROJECT_DIR, '.claude', 'fwd.json'))
+    ? asConfig(read(join(env.CLAUDE_PROJECT_DIR, '.claude', 'fwd.json')))
     : {};
   const merged = mergeConfig(machine, project);
   // Only objects join the union: a project setting `protected` to null or [] cannot wipe the

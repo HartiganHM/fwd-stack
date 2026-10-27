@@ -57,3 +57,15 @@ test('a project cannot wipe the machine list by setting it to null or []', () =>
       { 'br-a': 'production' },
     );
 });
+
+test('a project file that is valid JSON but not an object keeps the machine list', () => {
+  for (const project of [null, 7, 'x', []])
+    assert.deepEqual(
+      loadConfig({ CLAUDE_PROJECT_DIR: '/p' }, '/h', (path) =>
+        path === '/p/.claude/fwd.json'
+          ? project
+          : { neon: { protected: { 'br-a': 'production' } } },
+      ).neon.protected,
+      { 'br-a': 'production' },
+    );
+});

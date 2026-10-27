@@ -67,7 +67,13 @@ if (cmd === 'arm' || cmd === 'disarm' || cmd === 'status') {
   for (let i = 0; i < rest.length; i++) {
     const m = rest[i].match(/^--(session|minutes|max)(?:=(.*))?$/);
     if (!m) words.push(rest[i]);
-    else flags[m[1]] = m[2] ?? rest[++i];
+    else if (m[2] !== undefined) flags[m[1]] = m[2];
+    // A flag with no value refuses rather than arming on the default: `--max` at the end of the
+    // line, or followed by another flag, is an incomplete safety limit.
+    else if (i + 1 >= rest.length || rest[i + 1].startsWith('--')) {
+      console.error(`--${m[1]} needs a value`);
+      process.exit(2);
+    } else flags[m[1]] = rest[++i];
   }
   const sid = process.env.CLAUDE_SESSION_ID || flags.session;
   if (!sid) {

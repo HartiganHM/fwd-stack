@@ -65,3 +65,19 @@ test('an armed run keeps blocking across continuations until its cap', () => {
 test('an unarmed session is left alone', () => {
   assert.equal(stop(env(), { session_id: 'nobody' }), '');
 });
+
+test('a flag with no value refuses to arm', () => {
+  for (const args of [
+    ['--session=s3', '--max'],
+    ['--max', '--session=s3'],
+  ]) {
+    const e = env();
+    const r = cli(e, 'arm', 'x', ...args);
+    assert.equal(r.status, 2, args.join(' '));
+    assert.match(r.stderr, /needs a value/);
+    assert.equal(
+      JSON.parse(cli(e, 'status', '--session=s3').stdout).armed,
+      false,
+    );
+  }
+});
