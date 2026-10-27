@@ -2,7 +2,7 @@
   "$comment": "The versions every fwd-stack project is held to. `stack doctor` (planned) compares a project's package.json against these majors. Raise a pin here first, then in each project.",
   "node": "24",
   "nodeMinimum": "24.22.1",
-  "nodeMinimumReason": "Node's October 2026 security release: TLS hostname-check bypass, Brotli decompression RCE, and distrust of the compromised eMudhra intermediates. No project may run an older 24.x.",
+  "nodeMinimumReason": "Node's October 2026 security release: TLS hostname-check bypass, Brotli decompression RCE, and distrust of the compromised eMudhra intermediates. Each project raises its Node pin to at least this.",
   "pnpm": "10.33.2",
   "packages": {
     "next": "16",
