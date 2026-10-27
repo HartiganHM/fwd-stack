@@ -407,6 +407,9 @@ export function unreadableLine(cmd) {
     // An expansion or a backtick: a value the hook cannot see.
     /[$`]/.test(cmd) ||
     (cmd.match(/\bGH_REPO=/g) ?? []).length > 1 ||
+    // GH_REPO set anywhere (through `env`, an `export`, a wrapper) while a gated command resolved
+    // no repository of its own: the hook cannot know which repository that command acts on.
+    (/\bGH_REPO\b/.test(cmd) && parsed.some((g) => !g.repo)) ||
     // More than one repository selector: gh takes the last, a reader could take the first.
     (parsed.length > 0 &&
       simpleCommands(cmd).some(

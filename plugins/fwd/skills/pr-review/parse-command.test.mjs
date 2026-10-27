@@ -369,6 +369,17 @@ test('only a leading GH_REPO is an assignment, and its value must be owner/name'
   ]);
 });
 
+test('GH_REPO set through env or export, with no repository resolved, is unreadable', () => {
+  for (const cmd of [
+    'env GH_REPO=o/r gh pr merge 42 --squash',
+    "env GH_REPO=o/r bash -c 'gh pr merge 42'",
+    "bash -c 'export GH_REPO=o/r; gh pr merge 42'",
+    "export GH_REPO=o/r; bash -c 'gh pr merge 42'",
+  ])
+    assert.equal(unreadableLine(cmd), true, cmd);
+  assert.equal(unreadableLine('GH_REPO=o/r gh pr merge 42'), false);
+});
+
 test('anything else is not gated', () => {
   assert.deepEqual(parseCommand('git status'), []);
   assert.deepEqual(parseCommand('gh pr view 42'), []);
