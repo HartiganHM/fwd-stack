@@ -25,12 +25,14 @@ export const entryMatchesRepo = (entry, repo) =>
 export const refPath = (ref) =>
   ref.split('/').map(encodeURIComponent).join('/');
 
-// Whether the local checkout is the PR's head: `origin` is the head repository, or the branch
-// tracks the head repository's remote, or it tracks the PR's own ref from the PR's BASE
-// repository (`gh pr checkout` of a fork PR inside the base repository tracks
-// `refs/pull/<n>/head` there). Pull numbers are unique only within a repository, so a pull ref
-// tracked from anywhere else, or a same-named branch of an unrelated repository, is none of these.
+// Whether the local checkout is the PR's head. Two ways, each with its own repository condition:
+//  - the PR's branch name, in a checkout whose origin or tracked remote IS the head repository;
+//  - the PR's own pull ref (`gh pr checkout` of a fork PR inside the base repository tracks
+//    `refs/pull/<n>/head`), tracked from the PR's BASE repository, since pull numbers are unique
+//    only within a repository.
+// A same-named branch, or another repository's pull #n, is neither.
 export const checkoutIsPr = ({
+  branchMatches,
   originRepo,
   upstreamRepo,
   mergeRef,
@@ -38,6 +40,6 @@ export const checkoutIsPr = ({
   baseRepo,
   pr,
 }) =>
-  sameRepo(originRepo, headRepo) ||
-  sameRepo(upstreamRepo, headRepo) ||
+  (branchMatches &&
+    (sameRepo(originRepo, headRepo) || sameRepo(upstreamRepo, headRepo))) ||
   (mergeRef === `refs/pull/${pr}/head` && sameRepo(upstreamRepo, baseRepo));

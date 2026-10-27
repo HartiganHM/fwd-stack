@@ -27,7 +27,13 @@ import {
   parseDocSync,
   parseSettled,
 } from './settled.mjs';
-import { isDoc, isDocOnly, isGenerated, isHandoff } from './classify.mjs';
+import {
+  isDoc,
+  isDocOnly,
+  isGenerated,
+  isHandoff,
+  isToolingConfig,
+} from './classify.mjs';
 import { markStaleRounds } from './stale-rounds.mjs';
 import { ciProblemsOf } from './ci-state.mjs';
 import { ledgerPath } from './ledger-path.mjs';
@@ -284,11 +290,7 @@ const isTooling = (p) =>
 // config) is how a tooling PR wires its script in; it names no product surface.
 // Without this, a clock-shift PR touching ci.yml, package.json and vitest.config.ts
 // beside its script scored the script's findings as soft tooling.
-const isToolingConfig = (p) =>
-  p.startsWith('.github/') ||
-  p === 'package.json' ||
-  p === 'pnpm-lock.yaml' ||
-  /^(vitest|playwright|eslint)\.config\.\w+$/.test(p);
+
 const productIsTooling =
   files.some((f) => isTooling(f.filename)) &&
   files.every(
@@ -568,18 +570,19 @@ const upstreamUrl =
     ? gitConfig(`remote.${upstream}.url`)
     : upstream;
 const mergeRef = localBranch ? gitConfig(`branch.${localBranch}.merge`) : null;
-const isPrCheckout = checkoutIsPr({
-  originRepo,
-  upstreamRepo: repoFromRemoteUrl(upstreamUrl),
-  mergeRef,
-  headRepo: prData.head.repo?.full_name,
-  baseRepo: prData.base.repo?.full_name,
-  pr,
-});
+// Each way of being the PR's checkout carries its own repository condition: the PR's branch name
+// in a checkout of the head repository, or the PR's own pull ref tracked from its base repository.
 const onHeadBranch = Boolean(
   localBranch &&
-  isPrCheckout &&
-  (localBranch === prData.head.ref || mergeRef === `refs/pull/${pr}/head`),
+  checkoutIsPr({
+    branchMatches: localBranch === prData.head.ref,
+    originRepo,
+    upstreamRepo: repoFromRemoteUrl(upstreamUrl),
+    mergeRef,
+    headRepo: prData.head.repo?.full_name,
+    baseRepo: prData.base.repo?.full_name,
+    pr,
+  }),
 );
 
 // The REF is the authority on whether a push landed, not the PR API: `pulls/N`

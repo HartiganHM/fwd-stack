@@ -22,3 +22,15 @@ export const isDocOnly = (paths) =>
 export const isGenerated = (p) =>
   /(^|\/)(drizzle|migrations)\/meta\//.test(p) ||
   /(^|\/)(pnpm-lock\.yaml|package-lock\.json|yarn\.lock)$/.test(p);
+
+// Build and test configuration: how a tooling PR wires its script in. It names no product surface,
+// so a PR of scripts plus this configuration is still a PR whose product is the script.
+export const isToolingConfig = (p) =>
+  p.startsWith('.github/') ||
+  /(^|\/)(package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|\.nvmrc|\.node-version)$/.test(
+    p,
+  ) ||
+  /(^|\/)(tsconfig|jsconfig)(\.[\w-]+)?\.json$/.test(p) ||
+  /(^|\/)\.?(vitest|vite|playwright|eslint|prettier|commitlint|lint-staged)(rc)?(\.config)?\.\w+$/.test(
+    p,
+  );

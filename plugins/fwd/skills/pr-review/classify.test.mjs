@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isDoc, isDocOnly, isGenerated } from './classify.mjs';
+import { isDoc, isDocOnly, isGenerated, isToolingConfig } from './classify.mjs';
 
 const handoff = [
   'design/design_handoff_app_nav_labels/README.md',
@@ -37,4 +37,23 @@ test('migration snapshots and lockfiles are generated, source is not', () => {
   assert.equal(isGenerated('pnpm-lock.yaml'), true);
   assert.equal(isGenerated('drizzle/0178_add_column.sql'), false);
   assert.equal(isGenerated('src/lib/meta/x.json'), false);
+});
+
+test('build configuration is tooling config, so a script-plus-config PR is a tooling PR', () => {
+  for (const p of [
+    'tsconfig.json',
+    'packages/x/tsconfig.build.json',
+    'package.json',
+    'eslint.config.mjs',
+    '.prettierrc.json',
+    'vitest.config.ts',
+    '.github/workflows/ci.yml',
+  ])
+    assert.equal(isToolingConfig(p), true, p);
+  for (const p of [
+    'src/app/page.tsx',
+    'src/data/config.json',
+    'scripts/check.mjs',
+  ])
+    assert.equal(isToolingConfig(p), false, p);
 });
