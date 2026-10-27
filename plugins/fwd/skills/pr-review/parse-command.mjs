@@ -38,8 +38,14 @@ export function simpleCommands(cmd) {
   let words = [];
   let word = null;
   let quote = null;
+  // A redirection (`2>/dev/null`, `>out`, `<<'EOF'`) is not an argument: its operator, any file
+  // descriptor before it and its target word are dropped, so `script.sh 2>/dev/null 42` reads 42.
+  let dropNext = false;
   const endWord = () => {
-    if (word !== null) words.push(word);
+    if (word !== null) {
+      if (dropNext) dropNext = false;
+      else words.push(word);
+    }
     word = null;
   };
   const endCommand = () => {
@@ -91,6 +97,13 @@ export function simpleCommands(cmd) {
       if ((ch === '&' || ch === '|') && cmd[i + 1] === ch) i++;
       if (ch === '(' && word === '$') word = null;
       endCommand();
+    } else if (ch === '>' || ch === '<') {
+      if (word !== null && /^\d+$/.test(word)) word = null; // the fd of `2>`
+      endWord();
+      while (cmd[i + 1] === '>' || cmd[i + 1] === '<' || cmd[i + 1] === '&')
+        i++;
+      // `>&2` names a descriptor, not a file: drop it like any other target.
+      dropNext = true;
     } else if (/\s/.test(ch)) {
       endWord();
     } else {
@@ -352,12 +365,29 @@ export function mentionsGatedAction(cmd) {
   );
 }
 export function unreadableLine(cmd) {
+  const parsed = parseCommand(cmd);
+  // Anything the tokenizer found but could not resolve is unreadable, whatever the raw text says.
+  if (parsed.some((g) => !g.pr)) return true;
   if (!mentionsGatedAction(cmd)) return false;
+  const plain = cmd.replace(/\\\n/g, ' ').replace(/['"\\]/g, ' ');
+  const rerequestsMentioned = (
+    plain.match(/requested_reviewers|request-copilot-review/g) ?? []
+  ).length;
+  const rerequestsRead = parsed.filter((g) => g.action === 'rerequest').length;
   return (
+    // An expansion or a backtick: a value the hook cannot see.
     /[$`]/.test(cmd) ||
     (cmd.match(/\bGH_REPO=/g) ?? []).length > 1 ||
+    // More than one repository selector: gh takes the last, a reader could take the first.
+    (parsed.length > 0 &&
+      simpleCommands(cmd).some(
+        (words) =>
+          words.filter(
+            (w) => w === '-R' || w === '--repo' || /^(?:--repo=|-R)\S/.test(w),
+          ).length > 1,
+      )) ||
     unaccountedMerges(cmd) > 0 ||
-    parseCommand(cmd).some((g) => !g.pr)
+    rerequestsMentioned > rerequestsRead
   );
 }
 

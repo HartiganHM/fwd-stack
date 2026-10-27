@@ -328,6 +328,30 @@ test('a gated command line holding any expansion or a repeated GH_REPO is unread
   assert.equal(unreadableLine('gh pr merge 42 --squash'), false);
 });
 
+test('repeated selectors, redirections, quoted unresolved forms and unread re-requests are unreadable', () => {
+  for (const cmd of [
+    'gh pr merge 42 -R a/b -R c/d --squash',
+    'gh pr --repo="o/r" merge --squash',
+    "env -u FOO bash -c 'request-copilot-review.sh 41; request-copilot-review.sh 42'",
+  ])
+    assert.equal(unreadableLine(cmd), true, cmd);
+  assert.equal(unreadableLine('./scripts/request-copilot-review.sh 42'), false);
+});
+
+test('a redirection is not an argument', () => {
+  assert.deepEqual(
+    parseCommand('./scripts/request-copilot-review.sh 2>/dev/null 42'),
+    [rerequest('42')],
+  );
+  assert.deepEqual(parseCommand('gh pr merge --squash >out.log 42'), [
+    merge('42'),
+  ]);
+  // The documented re-request: JSON on stdin from a heredoc stays readable.
+  const doc = `gh api -X POST repos/o/r/pulls/42/requested_reviewers --input - <<'JSON'\n{"reviewers":["x"]}\nJSON`;
+  assert.deepEqual(parseCommand(doc), [rerequest('42', 'o/r')]);
+  assert.equal(unreadableLine(doc), false);
+});
+
 test('anything else is not gated', () => {
   assert.deepEqual(parseCommand('git status'), []);
   assert.deepEqual(parseCommand('gh pr view 42'), []);
