@@ -104,8 +104,9 @@ does not cost you the minute it takes to fix, it costs you a whole round.
 
 ## 1 · Requesting a review
 
-Copilot does **not** auto-review. Request on open and after **every** fix push —
-a push alone triggers nothing.
+Copilot does **not** auto-review, and a push alone triggers nothing. Request on
+open, and after a fix push only when §5 says the fix earns a round and the bar
+(§8) is not yet met. The gate judges both: `--action rerequest`.
 
 ```bash
 gh api -X POST repos/OWNER/REPO/pulls/N/requested_reviewers --input - <<'JSON'

@@ -381,7 +381,8 @@ const addedRuntime = (f) =>
 const destructivePaths = files
   .filter(
     (f) =>
-      /migrations?\//.test(f.filename) ||
+      // A migration directory's prose (its README) is documentation, not a migration.
+      (/migrations?\//.test(f.filename) && !isDoc(f.filename)) ||
       DESTRUCTIVE.test(addedRuntime(f) || ''),
   )
   .map((f) => f.filename);
@@ -473,8 +474,9 @@ const {
 const trailingClean = [...scored].reverse().findIndex((r) => !successful(r));
 const cleanStreak = trailingClean === -1 ? scored.length : trailingClean;
 
-// Three-round rule: one path drawing findings in three consecutive rounds.
-const lastThree = rounds.slice(-3);
+// Three-round rule: one path drawing findings in three consecutive SCORED rounds. Every §7 count
+// skips stale and errored reviews, or a discarded one hides the advance warning.
+const lastThree = scored.slice(-3);
 const repeated =
   lastThree.length === 3
     ? lastThree[0].paths.filter(
@@ -501,7 +503,7 @@ const createdHere = files
 //
 // Commit AUTHOR dates survive a rebase; committer dates do not. Only files the
 // PR creates can have been added late, so the loop is over those alone.
-const roundThreeAt = rounds[2]?.at;
+const roundThreeAt = scored[2]?.at;
 let addedLate = [];
 if (roundThreeAt) {
   for (const filename of createdHere) {
@@ -846,14 +848,14 @@ if (settled.size) {
   );
 }
 
-if (rounds.length > 3 && lastThreeOnNew) {
+if (scored.length > 3 && lastThreeOnNew) {
   warn(
     'new surface      ',
     `the last three rounds all landed on code this PR created — ask whether the fix that added it was in scope §7`,
   );
 }
 
-if (rounds.length > 3 && addedLate.length) {
+if (scored.length > 3 && addedLate.length) {
   warn(
     'late new files   ',
     `${addedLate.join(', ')} added after round 3 — that is new review surface §7`,
