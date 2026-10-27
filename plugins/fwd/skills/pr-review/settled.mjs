@@ -20,8 +20,10 @@
 // the entry adds that round. That is the §6 escape valve kept visible: each
 // round the author discounts is written in the PR body.
 
+// Any extension the gate can score a finding on, shell scripts included: a Settled line naming a
+// `.sh` file used to be ignored, so a ruling on a shell script could never release its block.
 const PATH =
-  /`([^`\s]+\.(?:m?[jt]sx?|mts|cts|md|mdx|json|txt|css|sql|ya?ml))`/g;
+  /`([^`\s]+\.(?:m?[jt]sx?|mts|cts|md|mdx|json|txt|css|sql|ya?ml|sh|bash|py|html))`/g;
 const ROUNDS = /\brounds?\s+(\d+(?:\s*(?:,|&|and|to|-|–|—)\s*\d+)*)/gi;
 
 const section = (body, heading) =>
@@ -64,8 +66,12 @@ export function parseSettled(body) {
   Object.defineProperty(settled, 'lines', { value: lines });
   for (const line of section(body, 'Settled').split('\n')) {
     const rounds = roundsOn(line);
-    for (const [, raw] of line.matchAll(PATH)) {
-      const path = raw.replace(/^\.\//, '');
+    // A line naming one file twice is still one decline: counting each mention let a single
+    // entry discount two findings on that file.
+    const paths = new Set(
+      [...line.matchAll(PATH)].map(([, raw]) => raw.replace(/^\.\//, '')),
+    );
+    for (const path of paths) {
       const prior = settled.get(path);
       lines.set(path, [
         ...(lines.get(path) ?? []),

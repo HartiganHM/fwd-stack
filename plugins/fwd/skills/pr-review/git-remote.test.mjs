@@ -1,0 +1,37 @@
+// node --test git-remote.test.mjs
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import {
+  entryMatchesRepo,
+  repoFromRemoteUrl,
+  sameRepo,
+} from './git-remote.mjs';
+
+test('https and ssh remotes, with or without .git, name the same repository', () => {
+  for (const url of [
+    'https://github.com/O/r.js.git',
+    'https://github.com/O/r.js',
+    'git@github.com:O/r.js.git',
+    'ssh://git@github.com/O/r.js.git\n',
+  ])
+    assert.equal(repoFromRemoteUrl(url), 'O/r.js');
+});
+
+test('a remote that is not GitHub names nothing', () => {
+  assert.equal(repoFromRemoteUrl('https://gitlab.com/o/r.git'), null);
+  assert.equal(repoFromRemoteUrl(''), null);
+});
+
+test('repository names compare without case, and an unknown never matches', () => {
+  assert.equal(sameRepo('HartiganHM/fwd-stack', 'hartiganhm/FWD-stack'), true);
+  assert.equal(sameRepo('o/a', 'o/b'), false);
+  assert.equal(sameRepo(null, 'o/a'), false);
+});
+
+test('a ledger row matches only its own repository, and legacy rows match any', () => {
+  assert.equal(entryMatchesRepo({ repo: 'o/a' }, 'o/a'), true);
+  assert.equal(entryMatchesRepo({ repo: 'o/a' }, 'o/b'), false);
+  assert.equal(entryMatchesRepo({}, 'o/b'), true);
+  assert.equal(entryMatchesRepo({ repo: 'o/a' }, null), true);
+});

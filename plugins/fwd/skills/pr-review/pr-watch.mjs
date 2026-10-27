@@ -13,7 +13,12 @@
 //   node pr-watch.mjs <pr> [--repo owner/name] [--minutes N] [--interval S]
 
 import { execFileSync } from 'node:child_process';
-import { describe, primeState, watchStep } from './watch-core.mjs';
+import {
+  describe,
+  fitsAnotherPoll,
+  primeState,
+  watchStep,
+} from './watch-core.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -27,6 +32,7 @@ if (!pr) {
   );
   process.exit(2);
 }
+const started = Date.now();
 const minutes = Number(flag('--minutes') ?? 29);
 const intervalMs = Number(flag('--interval') ?? 45) * 1000;
 
@@ -90,9 +96,9 @@ say(
   `#${pr} watcher armed: ${state.round} review(s) already on the PR; reporting what comes next`,
 );
 
-const deadline = Date.now() + minutes * 60_000;
+const deadline = started + minutes * 60_000;
 failures = 0;
-while (Date.now() < deadline) {
+while (fitsAnotherPoll(Date.now(), deadline, intervalMs)) {
   await sleep(intervalMs);
   let snap;
   try {

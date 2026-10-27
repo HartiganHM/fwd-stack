@@ -7,6 +7,7 @@ import {
   initialState,
   primeState,
   watchStep,
+  fitsAnotherPoll,
 } from './watch-core.mjs';
 
 // A real PR's history (2026-10-15, UTC): pushes, Copilot's two reviews and each head's CI run.
@@ -89,16 +90,34 @@ test('a watcher armed before round 1 wakes on round 1, its CI, round 2 and its C
   ]);
 });
 
-test('the one-shot watcher lanes armed (count rises, then exit) never sees round 2', () => {
-  const n0 = snapshotAt('2026-10-15T20:34:00Z').reviews.length;
-  let woke = 0;
-  for (const t of times('2026-10-15T20:34:00Z', '2026-10-15T21:10:00Z')) {
+test('the one-shot watcher lanes armed (count rises, then exit) wakes once where the shipped one wakes twice', () => {
+  const from = '2026-10-15T20:34:00Z';
+  const to = '2026-10-15T21:10:00Z';
+  const n0 = snapshotAt(from).reviews.length;
+  let oneShot = 0;
+  for (const t of times(from, to)) {
     if (snapshotAt(t).reviews.length > n0) {
-      woke += 1;
+      oneShot += 1;
       break; // `until [ count -gt n0 ]; do sleep; done` exits here
     }
   }
-  assert.equal(woke, 1);
+  let state = primeState(snapshotAt(from));
+  let shipped = 0;
+  for (const t of times(from, to)) {
+    const out = watchStep(state, snapshotAt(t));
+    state = out.state;
+    shipped += out.events.filter((e) => e.type === 'review').length;
+  }
+  assert.equal(oneShot, 1);
+  assert.equal(shipped, 2);
+});
+
+test('the deadline leaves room for a whole poll, reads included', () => {
+  const deadline = 29 * 60_000;
+  assert.equal(fitsAnotherPoll(0, deadline, 45_000), true);
+  // 28:00 + 45s sleep + 30s of reads ends at 29:15, past a 29:00 deadline.
+  assert.equal(fitsAnotherPoll(28 * 60_000, deadline, 45_000), false);
+  assert.equal(fitsAnotherPoll(27 * 60_000, deadline, 45_000), true);
 });
 
 test('a review of a head already pushed past is reported STALE, not fresh', () => {

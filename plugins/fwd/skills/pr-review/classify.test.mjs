@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isDocOnly } from './classify.mjs';
+import { isDoc, isDocOnly, isGenerated } from './classify.mjs';
 
 const handoff = [
   'design/design_handoff_app_nav_labels/README.md',
@@ -22,4 +22,19 @@ test('a design/ plus src/ PR is not doc-only', () => {
 test('docs alone stay doc-only, and an empty file list is not', () => {
   assert.equal(isDocOnly(['docs/superpowers/plans/x.md', 'AGENTS.md']), true);
   assert.equal(isDocOnly([]), false);
+});
+
+test('configuration JSON is not documentation', () => {
+  assert.equal(isDoc('package.json'), false);
+  assert.equal(isDoc('plugins/fwd/hooks/hooks.json'), false);
+  assert.equal(isDocOnly(['package.json', 'README.md']), false);
+  assert.equal(isDoc('docs/data/table.json'), true);
+});
+
+test('migration snapshots and lockfiles are generated, source is not', () => {
+  assert.equal(isGenerated('drizzle/meta/0178_snapshot.json'), true);
+  assert.equal(isGenerated('packages/db/drizzle/meta/_journal.json'), true);
+  assert.equal(isGenerated('pnpm-lock.yaml'), true);
+  assert.equal(isGenerated('drizzle/0178_add_column.sql'), false);
+  assert.equal(isGenerated('src/lib/meta/x.json'), false);
 });

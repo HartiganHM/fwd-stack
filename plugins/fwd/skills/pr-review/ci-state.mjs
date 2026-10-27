@@ -8,10 +8,21 @@
 //    completed run and hid the queued one. The newest run of a name is the higher id.
 const OK = new Set(['success', 'neutral', 'skipped']);
 
+// Copilot's own review runs as a workflow on the head. It is the review, not CI: while a round
+// is in progress it would block a merge the watcher has already reported green (pr-watch.mjs
+// leaves it out by the same name test).
+export const isReviewerRun = (w) =>
+  /copilot/i.test(w.name ?? '') || /copilot/i.test(w.path ?? '');
+
 export function ciProblemsOf({ runs, statuses, workflowRuns = [] }) {
   const problems = [];
+  const reviewerSuites = new Set(
+    workflowRuns.filter(isReviewerRun).map((w) => w.check_suite_id),
+  );
   const newest = new Map();
   for (const r of runs) {
+    if (reviewerSuites.has(r.check_suite?.id) || /copilot/i.test(r.name))
+      continue;
     const prev = newest.get(r.name);
     if (!prev || r.id > prev.id) newest.set(r.name, r);
   }
@@ -27,6 +38,7 @@ export function ciProblemsOf({ runs, statuses, workflowRuns = [] }) {
   }
   // A workflow run that has not finished may not have registered every check-run yet.
   for (const w of workflowRuns) {
+    if (isReviewerRun(w)) continue;
     if (w.status !== 'completed')
       problems.push(`workflow ${w.name}: ${w.status}`);
   }
