@@ -81,3 +81,14 @@ test('a flag with no value refuses to arm', () => {
     );
   }
 });
+
+test('an explicit --session wins over CLAUDE_SESSION_ID', () => {
+  const e = env();
+  assert.equal(cli(e, 'arm', 'x', '--session=s5').status, 0);
+  const withVar = { ...e, CLAUDE_SESSION_ID: 's4' };
+  assert.equal(cli(withVar, 'disarm', '--session=s5').status, 0);
+  assert.equal(
+    JSON.parse(cli(e, 'status', '--session=s5').stdout).armed,
+    false,
+  );
+});

@@ -75,7 +75,8 @@ if (cmd === 'arm' || cmd === 'disarm' || cmd === 'status') {
       process.exit(2);
     } else flags[m[1]] = rest[++i];
   }
-  const sid = process.env.CLAUDE_SESSION_ID || flags.session;
+  // An explicit flag wins: the variable stands in for it, and must not redirect a `disarm --session`.
+  const sid = flags.session || process.env.CLAUDE_SESSION_ID;
   if (!sid) {
     console.error(
       'no session id: pass --session=<id> or set CLAUDE_SESSION_ID',

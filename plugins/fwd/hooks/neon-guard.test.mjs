@@ -166,7 +166,7 @@ test('run_sql with quoting or comments the guard cannot read is denied', () => {
 });
 
 test('a protected id stays protected whatever its label', () => {
-  for (const label of [null, '', 0, false])
+  for (const label of [null, '', 0, false, { toString: null }])
     assert.match(
       neonDecision(
         'run_sql',
@@ -174,6 +174,40 @@ test('a protected id stays protected whatever its label', () => {
         { 'br-prod': label },
       ),
       /br-prod/,
-      String(label),
+      JSON.stringify(label),
+    );
+});
+
+test('a line comment ends at CR, so a statement after it is seen', () => {
+  assert.match(
+    neonDecision(
+      'run_sql',
+      { branch_id: 'br-prod', sql: 'select 1 -- note\r; drop table users' },
+      prod,
+    ),
+    /one read statement/,
+  );
+});
+
+test('only read-only builtins may be called on a protected branch', () => {
+  for (const sql of [
+    "select pg_notify('jobs', 'run')",
+    'select app.purge_everything()',
+    "select nextval('s')",
+  ])
+    assert.match(
+      neonDecision('run_sql', { branch_id: 'br-prod', sql }, prod),
+      /one read statement/,
+      sql,
+    );
+  for (const sql of [
+    'select count(*), max(created_at) from users where id in (1, 2)',
+    'with t as (select lower(name) from x) select * from t',
+    'select exists (select 1 from x)',
+  ])
+    assert.equal(
+      neonDecision('run_sql', { branch_id: 'br-prod', sql }, prod),
+      null,
+      sql,
     );
 });

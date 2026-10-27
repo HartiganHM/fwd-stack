@@ -32,10 +32,34 @@ const READ_EXCEPTIONS = new Set([
 
 const WRITE_SQL =
   /\b(insert|update|delete|merge|alter|drop|create|truncate|grant|revoke|copy|vacuum|reindex|cluster|call|do|lock|refresh|comment|security|reset|discard|into|set\s+(?!local\s+statement_timeout))\b/i;
-// A SELECT can still write or act through a function: sequences, settings, backends, large
-// objects, files, other databases. Any of these makes the statement not a read.
-const SIDE_EFFECT_FN =
-  /\b(setval|nextval|set_config|pg_terminate_backend|pg_cancel_backend|pg_reload_conf|pg_rotate_logfile|pg_promote|pg_advisory\w*|pg_try_advisory\w*|pg_read_\w*|pg_write_\w*|pg_file_\w*|lo_\w+|dblink\w*|pg_switch_wal|pg_create_\w*|pg_drop_\w*|pg_replication_\w*|txid_current)\s*\(/i;
+// A SELECT can still write or act through a function: sequences, settings, notifications,
+// backends, files, or any function an application defines. No list of bad functions is complete,
+// so this is a list of good ones: every `name(` in the statement must be a read-only builtin or a
+// keyword that takes parentheses. Anything else is denied, schema-qualified or not.
+const READ_CALLS = new Set(
+  // keywords followed by a parenthesis
+  (
+    'select with as from join on using where and or not in exists any all some values over ' +
+    'filter within partition by lateral cast row array case when then else ' +
+    // aggregates and window functions
+    'count sum avg min max bool_and bool_or every array_agg string_agg json_agg jsonb_agg ' +
+    'json_object_agg jsonb_object_agg percentile_cont percentile_disc mode stddev variance ' +
+    'row_number rank dense_rank ntile lag lead first_value last_value nth_value ' +
+    // scalar
+    'coalesce nullif greatest least abs round ceil ceiling floor trunc mod power sqrt ' +
+    'lower upper length char_length octet_length substring substr position trim btrim ltrim ' +
+    'rtrim replace split_part concat concat_ws left right lpad rpad format to_char to_date ' +
+    'to_timestamp to_number now current_date current_timestamp date_trunc date_part extract ' +
+    'age interval make_interval generate_series unnest array_length cardinality ' +
+    'json_build_object jsonb_build_object json_build_array jsonb_build_array to_json to_jsonb ' +
+    'jsonb_array_length jsonb_typeof jsonb_extract_path_text pg_size_pretty ' +
+    'pg_total_relation_size pg_relation_size pg_database_size pg_column_size'
+  ).split(' '),
+);
+const callsOnlyReads = (sql) =>
+  [...sql.matchAll(/(\w+)\s*\(/g)].every(([, name]) =>
+    READ_CALLS.has(name.toLowerCase()),
+  );
 
 // Tools whose branch is optional and defaults to the project's default branch.
 const TAKES_BRANCH = new Set([
@@ -64,7 +88,8 @@ export function neonDecision(tool, args = {}, protectedIds = {}) {
   let target = null;
   for (const [id, label] of Object.entries(protectedIds))
     // By key: a project mapping a machine's id to a falsy label must not switch its guard off.
-    if (named.includes(id.toLowerCase())) target = label || id;
+    if (named.includes(id.toLowerCase()))
+      target = typeof label === 'string' && label ? label : id;
   const takesBranch =
     'branch_id' in args || tool.startsWith('run_sql') || TAKES_BRANCH.has(tool);
   if (!target && takesBranch && !args.branch_id && !args.endpoint_id)
@@ -91,7 +116,8 @@ export function neonDecision(tool, args = {}, protectedIds = {}) {
     // Literals and line comments in one pass, leftmost first: stripping comments before literals
     // let a `--` inside a string swallow the rest of the statement, `; drop table` included.
     const sql = raw
-      .replace(/'(?:''|[^'])*'|--[^\n]*/g, (m) =>
+      // PostgreSQL ends a line comment at CR as well as LF.
+      .replace(/'(?:''|[^'])*'|--[^\r\n]*/g, (m) =>
         m.startsWith("'") ? "''" : ' ',
       )
       .trim();
@@ -100,7 +126,7 @@ export function neonDecision(tool, args = {}, protectedIds = {}) {
       single &&
       /^(select|with|show|explain(?!\s+analyze)|values|table)\b/i.test(sql) &&
       !WRITE_SQL.test(sql) &&
-      !SIDE_EFFECT_FN.test(sql)
+      callsOnlyReads(sql)
     )
       return null;
     return `run_sql on ${target} allows one read statement only.`;
