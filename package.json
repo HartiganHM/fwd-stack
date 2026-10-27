@@ -13,7 +13,7 @@
     "lint": "eslint .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm --filter ./tests/fixtures/* typecheck",
-    "test": "node --test tests/*.test.mjs plugins/*/skills/*/*.test.mjs"
+    "test": "node --test tests/*.test.mjs plugins/*/skills/*/*.test.mjs plugins/*/hooks/*.test.mjs plugins/*/lib/*.test.mjs"
   },
   "prettier": "@fwd-stack/prettier-config",
   "devDependencies": {
