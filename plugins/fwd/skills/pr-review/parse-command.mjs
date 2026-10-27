@@ -34,6 +34,7 @@ const VALUE_FLAGS = new Set([
 // arguments; it is not a shell.
 export function simpleCommands(cmd) {
   const commands = [];
+  const substitutions = [];
   let words = [];
   let word = null;
   let quote = null;
@@ -55,9 +56,25 @@ export function simpleCommands(cmd) {
     }
     if (quote) {
       if (ch === quote) quote = null;
-      else if (ch === '\\' && quote === '"' && i + 1 < cmd.length)
+      else if (
+        quote === '"' &&
+        (ch === '`' || (ch === '$' && cmd[i + 1] === '('))
+      ) {
+        // Double quotes still run a command substitution: its contents are a command line of
+        // their own, read as one, while the quoted text around it stays argument data.
+        const end = substitutionEnd(cmd, i);
+        const body = ch === '`' ? cmd.slice(i + 1, end) : cmd.slice(i + 2, end);
+        substitutions.push(...simpleCommands(body));
+        i = end;
+      } else if (ch === '\\' && quote === '"' && i + 1 < cmd.length)
         word += cmd[++i];
       else word += ch;
+      continue;
+    }
+    // An unquoted `#` starting a word is a comment to the end of the line. Read as text, an
+    // apostrophe in it (`# don't`) opened a quote that swallowed the command after it.
+    if (ch === '#' && word === null) {
+      while (i + 1 < cmd.length && cmd[i + 1] !== '\n') i++;
       continue;
     }
     if (ch === '"' || ch === "'") {
@@ -78,7 +95,22 @@ export function simpleCommands(cmd) {
     }
   }
   endCommand();
-  return commands;
+  return [...commands, ...substitutions];
+}
+
+// Index of the character that closes the substitution opened at `start` (`$(` or a backtick),
+// counting nested parentheses for `$(`. An unclosed one runs to the end.
+function substitutionEnd(cmd, start) {
+  if (cmd[start] === '`') {
+    const end = cmd.indexOf('`', start + 1);
+    return end === -1 ? cmd.length : end;
+  }
+  let depth = 0;
+  for (let i = start + 1; i < cmd.length; i++) {
+    if (cmd[i] === '(') depth++;
+    else if (cmd[i] === ')' && --depth === 0) return i;
+  }
+  return cmd.length;
 }
 
 // A command's repository, most explicit first: an API path, then `-R`/`--repo`, then a
@@ -108,7 +140,8 @@ const repoIn = (words) => {
 // The PR a `gh … pr merge` names: a number (`42` or `#42`) or a pull URL, wherever it sits
 // among the flags. A branch name, or nothing (the current branch), yields no PR.
 function mergeOf(words) {
-  const gh = words.indexOf('gh');
+  // By basename, so `/usr/local/bin/gh` is gh too.
+  const gh = words.findIndex((w) => w.split('/').at(-1) === 'gh');
   if (gh === -1) return null;
   // gh's own flags may come before the subcommand: `gh -R o/r pr merge 42`.
   let i = gh + 1;
@@ -153,24 +186,47 @@ function gatedIn(words) {
 // Every gated command in the line, each with the repository its own words name (a flag on one
 // command never lends its repository to another).
 // `bash -c '…'`, `sh -lc '…'`, `zsh -c '…'` and `eval '…'` run their argument as a command line,
-// so it is parsed as one rather than read as a single quoted word.
+// so it is parsed as one rather than read as a single quoted word. Only at the command's
+// executable position, past assignments and transparent prefixes: `--subject eval` is a value.
 const SHELLS = new Set(['bash', 'sh', 'zsh', 'dash']);
+const PREFIXES = new Set([
+  'env',
+  'command',
+  'exec',
+  'nohup',
+  'time',
+  'sudo',
+  'nice',
+]);
 function innerCommandLine(words) {
-  const at = words.findIndex(
-    (w) => SHELLS.has(w.split('/').at(-1)) || w === 'eval',
-  );
-  if (at === -1) return null;
-  if (words[at] === 'eval') return words.slice(at + 1).join(' ');
+  let at = 0;
+  while (
+    at < words.length &&
+    (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[at]) || PREFIXES.has(words[at]))
+  )
+    at++;
+  const exe = words[at]?.split('/').at(-1);
+  if (exe === 'eval') return words.slice(at + 1).join(' ');
+  if (!SHELLS.has(exe)) return null;
   const flag = words.findIndex((w, i) => i > at && /^-[a-z]*c[a-z]*$/.test(w));
   return flag === -1 ? null : (words[flag + 1] ?? null);
 }
 
-export function parseCommand(cmd, depth = 0) {
+// Every gated command in the line, each with the repository its own words name (a flag on one
+// command never lends its repository to another). A `GH_REPO=` set on a shell wrapper is the
+// default for the commands it runs, as it is in their environment.
+export function parseCommand(cmd, depth = 0, inheritedRepo = null) {
   return simpleCommands(cmd).flatMap((words) => {
     const inner = depth < 3 ? innerCommandLine(words) : null;
-    if (inner !== null) return parseCommand(inner, depth + 1);
+    if (inner !== null) {
+      const env = words
+        .map((w) => w.match(new RegExp(`^GH_REPO=(${REPO})$`))?.[1])
+        .find(Boolean);
+      return parseCommand(inner, depth + 1, env ?? inheritedRepo);
+    }
     const gated = gatedIn(words);
-    return gated ? [gated] : [];
+    if (!gated) return [];
+    return [{ ...gated, repo: gated.repo ?? inheritedRepo }];
   });
 }
 

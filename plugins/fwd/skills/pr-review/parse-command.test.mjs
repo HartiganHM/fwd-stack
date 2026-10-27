@@ -153,6 +153,49 @@ test('an explicit repository wins over GH_REPO', () => {
   );
 });
 
+test('a substitution inside double quotes still runs its command', () => {
+  assert.deepEqual(parseCommand('result="$(gh pr merge 42 --squash)"'), [
+    merge('42'),
+  ]);
+  assert.deepEqual(parseCommand('echo "done: `gh pr merge 42`"'), [
+    merge('42'),
+  ]);
+  assert.deepEqual(parseCommand("echo '$(gh pr merge 42)'"), []);
+});
+
+test('a comment is skipped, apostrophes and all', () => {
+  assert.deepEqual(
+    parseCommand("# don't skip the gate\ngh pr merge 42 --squash"),
+    [merge('42')],
+  );
+  assert.deepEqual(parseCommand('gh pr merge 42 # merged'), [merge('42')]);
+});
+
+test('a path-qualified gh is gh', () => {
+  assert.deepEqual(parseCommand('/usr/local/bin/gh pr merge 42'), [
+    merge('42'),
+  ]);
+});
+
+test('a shell or eval only counts in the executable position', () => {
+  assert.deepEqual(parseCommand('gh pr merge 42 --subject eval'), [
+    merge('42'),
+  ]);
+  assert.deepEqual(parseCommand("env FOO=1 bash -c 'gh pr merge 42'"), [
+    merge('42'),
+  ]);
+});
+
+test('GH_REPO on a shell wrapper is the default for what it runs', () => {
+  assert.deepEqual(parseCommand("GH_REPO=a/b bash -c 'gh pr merge 42'"), [
+    merge('42', 'a/b'),
+  ]);
+  assert.deepEqual(
+    parseCommand("GH_REPO=a/b bash -c 'gh pr merge 42 -R c/d'"),
+    [merge('42', 'c/d')],
+  );
+});
+
 test('anything else is not gated', () => {
   assert.deepEqual(parseCommand('git status'), []);
   assert.deepEqual(parseCommand('gh pr view 42'), []);
