@@ -1,0 +1,67 @@
+// node --test ci-state.test.mjs
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+
+import { ciProblemsOf } from './ci-state.mjs';
+
+const run = (id, name, status, conclusion = null, started_at = null) => ({
+  id,
+  name,
+  status,
+  conclusion,
+  started_at,
+});
+
+test('a head with no checks at all is a problem, not a green', () => {
+  const { problems, count } = ciProblemsOf({ runs: [], statuses: [] });
+  assert.equal(count, 0);
+  assert.match(problems.join(), /no checks on this head/);
+});
+
+test('a queued check blocks', () => {
+  const { problems } = ciProblemsOf({
+    runs: [run(2, 'test', 'queued')],
+    statuses: [],
+  });
+  assert.deepEqual(problems, ['test: queued']);
+});
+
+test('a queued re-run hides the old completed run: the higher id wins, not started_at', () => {
+  const { problems } = ciProblemsOf({
+    runs: [
+      run(1, 'test', 'completed', 'success', '2026-10-22T10:00:00Z'),
+      run(2, 'test', 'queued'),
+    ],
+    statuses: [],
+  });
+  assert.deepEqual(problems, ['test: queued']);
+});
+
+test('an unfinished workflow run blocks even when its check-runs have not registered', () => {
+  const { problems } = ciProblemsOf({
+    runs: [run(1, 'select', 'completed', 'success')],
+    statuses: [],
+    workflowRuns: [{ name: 'CI', status: 'queued' }],
+  });
+  assert.deepEqual(problems, ['workflow CI: queued']);
+});
+
+test('all green passes and counts', () => {
+  const r = ciProblemsOf({
+    runs: [
+      run(1, 'test', 'completed', 'success'),
+      run(2, 'lint', 'completed', 'skipped'),
+    ],
+    statuses: [{ context: 'vercel', state: 'success' }],
+    workflowRuns: [{ name: 'CI', status: 'completed' }],
+  });
+  assert.deepEqual(r, { problems: [], count: 3 });
+});
+
+test('a failed check and a pending status both block', () => {
+  const { problems } = ciProblemsOf({
+    runs: [run(1, 'test', 'completed', 'failure')],
+    statuses: [{ context: 'vercel', state: 'pending' }],
+  });
+  assert.deepEqual(problems, ['test: failure', 'vercel: pending']);
+});

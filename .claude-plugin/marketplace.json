@@ -1,0 +1,14 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "fwd-stack",
+  "description": "Featherweight's shared Claude Code skills and hooks.",
+  "owner": { "name": "HartiganHM", "url": "https://github.com/HartiganHM" },
+  "plugins": [
+    {
+      "name": "fwd",
+      "description": "Shared review, delivery and orchestration skills and their guard hooks.",
+      "source": "./plugins/fwd",
+      "category": "development"
+    }
+  ]
+}
