@@ -24,3 +24,18 @@ export const entryMatchesRepo = (entry, repo) =>
 // `#42` a URL fragment, so the gate asked for the wrong ref.
 export const refPath = (ref) =>
   ref.split('/').map(encodeURIComponent).join('/');
+
+// Whether the local checkout is the PR's head: `origin` is the head repository, or the branch
+// tracks the head repository's remote, or it tracks the PR's own ref (`gh pr checkout` of a fork
+// PR inside the base repository tracks `refs/pull/<n>/head`). A same-named branch of an
+// unrelated repository is none of these.
+export const checkoutIsPr = ({
+  originRepo,
+  upstreamRepo,
+  mergeRef,
+  headRepo,
+  pr,
+}) =>
+  sameRepo(originRepo, headRepo) ||
+  sameRepo(upstreamRepo, headRepo) ||
+  mergeRef === `refs/pull/${pr}/head`;

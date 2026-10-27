@@ -64,10 +64,10 @@ function snapshot() {
     '[.[] | select(.user.type == "Bot") | {id, commit_id, submitted_at, body}]',
   );
   // Copilot's own review run is a workflow too; CI is every other run on the head. Matched on name
-  // or path, the same test as ci-state.mjs's isReviewerRun, so the watcher and the gate agree.
+  // or path, exactly as ci-state.mjs's isReviewerRun does, so the watcher and the gate agree.
   const ciRuns = gh(
     `repos/${repo}/actions/runs?head_sha=${p.head}&per_page=100`,
-    '[.workflow_runs[] | select(((.name // "") + " " + (.path // "")) | test("copilot"; "i") | not) | {head_sha, status, conclusion, name}]',
+    '[.workflow_runs[] | select(((.name // "") | test("^Running Copilot Code Review$"; "i")) or ((.path // "") | test("(^|/)copilot-pull-request-reviewer$")) | not) | {head_sha, status, conclusion, name}]',
   );
   return {
     state: p.merged ? 'merged' : p.state,

@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  checkoutIsPr,
   entryMatchesRepo,
   refPath,
   repoFromRemoteUrl,
@@ -43,4 +44,25 @@ test('a branch name is encoded per segment for a REST path', () => {
   assert.equal(refPath('fix/#42'), 'fix/%2342');
   assert.equal(refPath('feat/a b?c'), 'feat/a%20b%3Fc');
   assert.equal(refPath('main'), 'main');
+});
+
+test('a fork PR checked out in the base repository is the PR head; an unrelated repo is not', () => {
+  const head = { headRepo: 'me/r', pr: '7' };
+  assert.equal(checkoutIsPr({ ...head, originRepo: 'me/r' }), true);
+  assert.equal(
+    checkoutIsPr({ ...head, originRepo: 'up/r', upstreamRepo: 'me/r' }),
+    true,
+  );
+  assert.equal(
+    checkoutIsPr({ ...head, originRepo: 'up/r', mergeRef: 'refs/pull/7/head' }),
+    true,
+  );
+  assert.equal(
+    checkoutIsPr({
+      ...head,
+      originRepo: 'other/x',
+      mergeRef: 'refs/heads/main',
+    }),
+    false,
+  );
 });

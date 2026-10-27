@@ -10,9 +10,13 @@ const OK = new Set(['success', 'neutral', 'skipped']);
 
 // Copilot's own review runs as a workflow on the head. It is the review, not CI: while a round
 // is in progress it would block a merge the watcher has already reported green (pr-watch.mjs
-// leaves it out by the same name test).
+// leaves it out by the same test). Matched on the reviewer's exact identity, never a substring.
 export const isReviewerRun = (w) =>
-  /copilot/i.test(w.name ?? '') || /copilot/i.test(w.path ?? '');
+  /^Running Copilot Code Review$/i.test(w.name ?? '') ||
+  /(^|\/)copilot-pull-request-reviewer$/.test(w.path ?? '');
+// The reviewer's own check-run name. Anything else with "copilot" in it (a project's
+// "Copilot integration tests") is ordinary CI and still gates the merge.
+const isReviewerCheck = (name) => name === 'copilot-pull-request-reviewer';
 
 export function ciProblemsOf({ runs, statuses, workflowRuns = [] }) {
   const problems = [];
@@ -21,7 +25,7 @@ export function ciProblemsOf({ runs, statuses, workflowRuns = [] }) {
   );
   const newest = new Map();
   for (const r of runs) {
-    if (reviewerSuites.has(r.check_suite?.id) || /copilot/i.test(r.name))
+    if (reviewerSuites.has(r.check_suite?.id) || isReviewerCheck(r.name))
       continue;
     const prev = newest.get(r.name);
     if (!prev || r.id > prev.id) newest.set(r.name, r);

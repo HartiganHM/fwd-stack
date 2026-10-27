@@ -106,3 +106,24 @@ test('a real CI workflow still blocks while it runs', () => {
     'workflow CI: in_progress',
   ]);
 });
+
+test('a project check that merely mentions Copilot is CI and still blocks', () => {
+  const { problems } = ciProblemsOf({
+    runs: [
+      {
+        ...run(1, 'Copilot integration tests', 'completed', 'failure'),
+        check_suite: { id: 30 },
+      },
+    ],
+    statuses: [],
+    workflowRuns: [
+      {
+        name: 'CI',
+        path: '.github/workflows/copilot-tests.yml',
+        status: 'completed',
+        check_suite_id: 30,
+      },
+    ],
+  });
+  assert.deepEqual(problems, ['Copilot integration tests: failure']);
+});

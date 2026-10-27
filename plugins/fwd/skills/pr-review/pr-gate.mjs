@@ -33,6 +33,7 @@ import { ciProblemsOf } from './ci-state.mjs';
 import { ledgerPath } from './ledger-path.mjs';
 import { diminishingReturns, findingsIn } from './rounds.mjs';
 import {
+  checkoutIsPr,
   entryMatchesRepo,
   refPath,
   repoFromRemoteUrl,
@@ -549,10 +550,36 @@ try {
 } catch {
   // Not a git repo, or a detached HEAD — the check simply does not apply.
 }
-// The local branch is the PR's only when the checkout is the PR's repository as well: the same
-// branch name in another repo's checkout is a different branch.
-const onHeadBranch =
-  originIsHead && localBranch && localBranch === prData.head.ref;
+// The local branch is the PR's only when the checkout is the PR's as well: `origin` is the head
+// repository, or the branch tracks the head repository or the PR's own ref (a fork PR checked out
+// inside the base repository). The same branch name in an unrelated repo is a different branch.
+const gitConfig = (key) => {
+  try {
+    return execFileSync('git', ['config', '--get', key], {
+      encoding: 'utf8',
+    }).trim();
+  } catch {
+    return null;
+  }
+};
+const upstream = localBranch ? gitConfig(`branch.${localBranch}.remote`) : null;
+const upstreamUrl =
+  upstream && !upstream.includes('/') && !upstream.includes(':')
+    ? gitConfig(`remote.${upstream}.url`)
+    : upstream;
+const mergeRef = localBranch ? gitConfig(`branch.${localBranch}.merge`) : null;
+const isPrCheckout = checkoutIsPr({
+  originRepo,
+  upstreamRepo: repoFromRemoteUrl(upstreamUrl),
+  mergeRef,
+  headRepo: prData.head.repo?.full_name,
+  pr,
+});
+const onHeadBranch = Boolean(
+  localBranch &&
+  isPrCheckout &&
+  (localBranch === prData.head.ref || mergeRef === `refs/pull/${pr}/head`),
+);
 
 // The REF is the authority on whether a push landed, not the PR API: `pulls/N`
 // lags the ref by seconds and reported a false negative on a push that had in
