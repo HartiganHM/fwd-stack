@@ -66,6 +66,14 @@ every project's agents share, so each repo runs the same review gate instead of 
 /plugin install fwd --marketplace HartiganHM/fwd-stack
 ```
 
+That one-step form needs Claude Code 2.1.275 or later. On an earlier version, add the
+marketplace first:
+
+```sh
+/plugin marketplace add HartiganHM/fwd-stack
+/plugin install fwd@fwd-stack
+```
+
 | Skill       | What it does                                                                       |
 | ----------- | ---------------------------------------------------------------------------------- |
 | `pr-review` | The review gate (`pr-gate.mjs`), watcher and merge hook. The skill text lands next |

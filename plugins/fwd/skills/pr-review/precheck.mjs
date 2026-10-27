@@ -13,7 +13,8 @@ import { execFileSync } from 'node:child_process';
 // edit. Rows carry the era they were scored under, and the report never mixes
 // them. History:
 //   pre-720  — no repository custom instructions
-//   post-720 — .github/copilot-instructions.md merged in an app repository (its PR 720, which names the era)
+//   post-720 — .github/copilot-instructions.md merged in an app repository. The labels are
+//              opaque: ledger rows store them, so they are never renamed
 const CURRENT_ERA = 'pre-720';
 
 import { ensureLedgerDir, ledgerPath } from './ledger-path.mjs';

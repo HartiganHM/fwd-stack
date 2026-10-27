@@ -29,6 +29,16 @@ test('without CLAUDE_PLUGIN_DATA (the Bash tool) the documented data folder is d
   );
 });
 
+test('CLAUDE_CONFIG_DIR moves both the data folder and the old location', () => {
+  const env = { CLAUDE_CONFIG_DIR: '/cfg' };
+  assert.equal(
+    ledgerPath(env, home, none),
+    '/cfg/plugins/data/fwd-fwd-stack/precheck-ledger.json',
+  );
+  const legacy = '/cfg/skills/pr-review/precheck-ledger.json';
+  assert.equal(ledgerPath(env, home, only(legacy)), legacy);
+});
+
 test('a ledger still at the old skill location is read until it is moved', () => {
   const legacy = '/home/u/.claude/skills/pr-review/precheck-ledger.json';
   assert.equal(ledgerPath({}, home, only(legacy)), legacy);

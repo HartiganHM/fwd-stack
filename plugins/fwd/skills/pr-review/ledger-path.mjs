@@ -5,8 +5,10 @@
 // committed here. So it lives in the plugin's persistent data folder instead.
 //
 // Claude Code exports CLAUDE_PLUGIN_DATA to hooks, but not to commands Claude runs through
-// Bash, so the folder is also derived from its documented name: `~/.claude/plugins/data/<id>`,
-// where <id> is `fwd@fwd-stack` with every character outside [A-Za-z0-9_-] replaced by `-`.
+// Bash, so the folder is also derived from its documented name: `<config>/plugins/data/<id>`,
+// where <id> is `fwd@fwd-stack` with every character outside [A-Za-z0-9_-] replaced by `-`
+// and <config> is CLAUDE_CONFIG_DIR when set, else `~/.claude`. Both sides must agree, or a
+// pass recorded from Bash is invisible to the hook.
 //
 // A ledger left at the old location is still read until it is moved, so nothing recorded
 // before the move is lost and nothing has to happen on the day the plugin is installed.
@@ -22,11 +24,11 @@ export function ledgerPath(
   exists = existsSync,
 ) {
   if (env.FWD_PRECHECK_LEDGER) return env.FWD_PRECHECK_LEDGER;
+  const config = env.CLAUDE_CONFIG_DIR || join(home, '.claude');
   const data =
-    env.CLAUDE_PLUGIN_DATA ||
-    join(home, '.claude', 'plugins', 'data', 'fwd-fwd-stack');
+    env.CLAUDE_PLUGIN_DATA || join(config, 'plugins', 'data', 'fwd-fwd-stack');
   const current = join(data, FILE);
-  const legacy = join(home, '.claude', 'skills', 'pr-review', FILE);
+  const legacy = join(config, 'skills', 'pr-review', FILE);
   if (!exists(current) && exists(legacy)) return legacy;
   return current;
 }
