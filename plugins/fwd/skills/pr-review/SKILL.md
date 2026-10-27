@@ -13,7 +13,7 @@ never got the component, a phone layout that diverged from desktop, and a surfac
 that reimplemented what another route already had are all invisible in one. Those
 are `feature-acceptance`'s job, and no number of review rounds substitutes for it.
 Invoke both. Every
-repository, every run. Nothing else restates this — `~/.claude/CLAUDE.md` holds
+repository, every run. Nothing else restates this — the user's own `CLAUDE.md` holds
 only the hard gates and a pointer here; project `CLAUDE.md` / `AGENTS.md` and
 other skills point here rather than copy.
 
@@ -28,7 +28,10 @@ drawn findings three rounds running, and which files appeared after round 3.
 With `--action` it judges that action and exits non-zero when a rule forbids it.
 
 **A PreToolUse hook runs it before `gh pr merge` and before a review
-re-request, and denies the call when it exits non-zero.** That is deliberate.
+re-request, and denies the call when it exits non-zero.** The hook reads the command
+line itself, and **fails closed**: a command that mentions a merge it cannot attribute to a PR
+(a wrapper, a substitution, a heredoc, an unknown flag, a merge of the current branch) is
+denied with the plain form to use, `gh pr merge <number> [--repo owner/name]`. That is deliberate.
 Every rule here was written after a real cost, and then the person who wrote
 them broke three of them in a single PR — merged one eight rounds after its bar
 was met, patched one surface for three consecutive rounds instead of deciding,
@@ -58,8 +61,8 @@ Three specific cautions, each earned:
   frozen.
 - **Eight doors now reach a lowered bar** — doc-only, copy-only, human-reviewed,
   diminishing returns, soft-fixed, §7's hard stop, `## Settled`, `## Doc-sync`.
-  Audited over the 60 PRs merged after 2026-09-16: `## Settled` 48%, plain
-  two-round bar 38%, doc-only 12%, human-reviewed 8%, and a sample of the
+  Audited over the 60 PRs merged after 2026-09-16 (a PR can pass through more than one, so these
+  overlap): `## Settled` 48%, plain two-round bar 38%, doc-only 12%, human-reviewed 8%, and a sample of the
   `## Settled` sections found substantive evidenced declines rather than
   shortcuts. No abuse. But a ninth door needs to justify itself against that
   count, not only against its own case.
@@ -115,8 +118,9 @@ JSON
   `review_requested` event per round:
 
 ```bash
+# --paginate prints one JSON array per page; jq -s joins them before counting.
 gh api repos/OWNER/REPO/issues/N/timeline --paginate \
-  -q '[.[]|select(.event=="review_requested")]|length'
+  | jq -s '[.[][]|select(.event=="review_requested")]|length'
 ```
 
 - If a project ships a helper script for this, use it; it should fall through to
@@ -152,7 +156,7 @@ The argument is `botIds:`, never `userIds:` — a `BOT_…` id in `userIds` fail
 with a message that reads like a stale node ID. `BOT_kgDOC9w8XQ` (nominally the
 coding agent) has also resolved to the reviewer, so read the mutation's own
 `reviewRequests` back rather than trusting the id you sent. Get a live id from
-any prior review: `gh api repos/O/R/pulls/N/reviews --jq '.[0].user.node_id'`.
+any prior bot review: `gh api repos/O/R/pulls/N/reviews --jq '[.[]|select(.user.type=="Bot")][0].user.node_id'`.
 
 **Confirm the push actually landed before counting the round.** A chained
 `git rebase && git push && gh api …` short-circuits silently — one agent's rebase
@@ -180,12 +184,13 @@ chaining past them.
 ## 2 · Waiting
 
 - **Use the shipped watcher, armed once when the PR opens:**
-  `Monitor({ command: 'node "${CLAUDE_PLUGIN_ROOT}/skills/pr-review/pr-watch.mjs" <pr>', timeout_ms: 1800000 })`.
+  `Monitor({ command: 'node "${CLAUDE_PLUGIN_ROOT}/skills/pr-review/pr-watch.mjs" <pr>', description: 'PR <pr> reviews, CI and merge', timeout_ms: 1800000 })`.
   It prints one line for every new review (fresh, STALE or errored), for each head's CI, and for the merge,
   and it keeps running across re-requests. A hand-rolled `until the count rises; exit` loop wakes on round 1
   and then nothing is watching: round 2 lands in silence, and silence reads as waiting (it happened on four PRs
   in one week). When it prints `TIMED OUT`, re-arm it. The rules below are what it implements.
-- Poll every ~240–270s. Count reviews whose `.user.type == "Bot"` — filtering on
+- If you hand-roll a poll instead, every ~240–270s is enough (the shipped watcher polls every 45s
+  because it costs nothing between lines). Count reviews whose `.user.type == "Bot"` — filtering on
   the bare login `"Copilot"` matches nothing and times out silently.
 - Poll the **count** above where it started. An emptied `reviewRequests` does not
   mean a new review landed; the previous round's review satisfies that check.
@@ -209,7 +214,7 @@ chaining past them.
 # from both directions.
 head=$(git ls-remote origin refs/heads/BRANCH | cut -f1)
 seen=$(gh api repos/OWNER/REPO/pulls/N/reviews --paginate \
-  --jq '[.[]|select(.user.type=="Bot")][-1].commit_id')
+  | jq -rs '[.[][]|select(.user.type=="Bot")][-1].commit_id')
 [ "$head" = "$seen" ] || echo "STALE — discard and re-request"
 ```
 
@@ -631,8 +636,9 @@ runtime.
 - Draw the scope line explicitly when findings start landing on staleness the PR
   did not create. Say so in the PR body and merge.
 - **A round landing only on copy strings needs one clean round, not two** — on
-  a code PR as well. `src/lib/copy/**` cannot break a contract the way a branch
-  can, and `check:copy-drift` covers the drift case in CI, so two rounds is ~25
+  a code PR as well. A copy module (the gate reads `src/lib/copy/**`) cannot break a
+  contract the way a branch can, and a project that runs a copy-drift check in CI covers the
+  drift case, so two rounds is ~25
   minutes to confirm a sentence. The gate applies this automatically.
 - **Bundle doc changes.** Multiple doc changes in flight belong in one PR.
 - Never open a spec-only or plan-only PR. Spec, plan and code land together and
@@ -662,7 +668,8 @@ files took eleven. Review surface is per-file — each file is a context the
 reviewer loads, and a long file is one context however long it is. (One
 repository, one day, n=30 — strong enough to move the gate, not to be a law.)
 
-**Size gate before opening.** Over ~20 files, split it —
+**Size gate before opening.** Over ~20 files, split it (the gate also warns past ~800 runtime
+lines, excluding prose and generated files, as the weaker of the two signals) —
 and name the PR boundaries **in the plan**, before implementation starts. A
 single 67-file feature PR took 32 rounds over 12.5 hours, blocked another agent
 for a day, and by round 25 was surfacing defects its own earlier rounds had
@@ -837,7 +844,8 @@ Its hits cluster on what is visible inside one file: a stale claim, a class fixe
 in one place and not its siblings, a wrong number. If that survives the kinds, it
 says where to point the pass — which is a better answer than whether to keep it.
 
-At three scored PRs of at least two kinds the ledger prints a verdict: **≥70%** cut Copilot to one
+At three scorable PRs (round 1 raised findings, current era, fewer than half of unstated kind)
+of at least two kinds the ledger prints a verdict: **≥70%** cut Copilot to one
 confirmation round, **30–70%** keep both, **<30%** delete the pass. Bring the
 verdict to the user rather than acting on it — this section stays a trial, not
 policy, until that number exists. Every other rule in this document was written
