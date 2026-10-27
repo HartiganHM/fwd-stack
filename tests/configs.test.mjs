@@ -92,13 +92,21 @@ test('every tsconfig export resolves to a file that extends base or is base', ()
   }
 });
 
-test('the baseline pins Node to the same major as .nvmrc', () => {
+test('.nvmrc pins the baseline Node minimum, in the baseline major', () => {
   const baseline = read('baseline.json');
   const nvmrc = readFileSync(
     new URL('../.nvmrc', import.meta.url),
     'utf8',
   ).trim();
-  assert.equal(baseline.node, nvmrc);
+  assert.equal(nvmrc, baseline.nodeMinimum);
+  assert.equal(nvmrc.split('.')[0], baseline.node);
+});
+
+test('the kit engines range starts at the baseline Node minimum', () => {
+  const baseline = read('baseline.json');
+  const pkg = read('package.json');
+  assert.equal(baseline.nodeMinimum.split('.')[0], baseline.node);
+  assert.equal(pkg.engines.node, `^${baseline.nodeMinimum}`);
 });
 
 // Every preset must type-check a file on its own, with nothing added by the project. `base`

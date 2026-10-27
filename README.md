@@ -9,16 +9,16 @@ The design and the reasoning behind it are in the
 
 ## What is here
 
-| Path                            | What it is                                                                                    |
-| ------------------------------- | --------------------------------------------------------------------------------------------- |
-| `packages/tsconfig`             | `base`, `strictest`, `nextjs` and `node` TypeScript configs                                   |
-| `packages/eslint-config`        | `base`, `node` and `next` ESLint flat configs                                                 |
-| `packages/prettier-config`      | The shared Prettier config                                                                    |
-| `packages/commitlint-config`    | Conventional commits with the shared type list                                                |
-| `.github/workflows/node-ci.yml` | Reusable CI gate: install, then typecheck, lint, test and build                               |
-| `baseline.json`                 | The majors every project is held to (Node, pnpm, Next, React, Zod, Vitest, Sentry, Drizzle …) |
-| `plugins/fwd`                   | Claude Code plugin: the shared agent skills and their guard hooks                             |
-| `tests/`                        | Proves each config loads and enforces what it claims                                          |
+| Path                            | What it is                                                                                                                  |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `packages/tsconfig`             | `base`, `strictest`, `nextjs` and `node` TypeScript configs                                                                 |
+| `packages/eslint-config`        | `base`, `node` and `next` ESLint flat configs                                                                               |
+| `packages/prettier-config`      | The shared Prettier config                                                                                                  |
+| `packages/commitlint-config`    | Conventional commits with the shared type list                                                                              |
+| `.github/workflows/node-ci.yml` | Reusable CI gate: install, then typecheck, lint, test and build                                                             |
+| `baseline.json`                 | The majors every project is held to (Node, pnpm, Next, React, Zod, Vitest, Sentry, Drizzle …), plus a Node security minimum |
+| `plugins/fwd`                   | Claude Code plugin: the shared agent skills and their guard hooks                                                           |
+| `tests/`                        | Proves each config loads and enforces what it claims                                                                        |
 
 Planned, in order: the `stack` generator with opt-in capabilities, `stack doctor` (drift against
 `baseline.json`), and a cross-project cost check.

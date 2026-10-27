@@ -57,6 +57,9 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: ${{ inputs.working-directory }}/${{ inputs.node-version-file }}
+          # Without this a major-only pin (`24`) resolves to whatever 24.x the runner has
+          # cached, which can trail a security release.
+          check-latest: true
           cache: pnpm
           cache-dependency-path: ${{ inputs.working-directory }}/pnpm-lock.yaml
 
