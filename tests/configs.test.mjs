@@ -101,6 +101,13 @@ test('the baseline pins Node to the same major as .nvmrc', () => {
   assert.equal(baseline.node, nvmrc);
 });
 
+test('the kit engines range starts at the baseline Node minimum', () => {
+  const baseline = read('baseline.json');
+  const pkg = read('package.json');
+  assert.equal(baseline.nodeMinimum.split('.')[0], baseline.node);
+  assert.equal(pkg.engines.node, `^${baseline.nodeMinimum}`);
+});
+
 // Every preset must type-check a file on its own, with nothing added by the project. `base`
 // once carried `resolveJsonModule` without a module resolution, which fails with TS5070 for any
 // project that extends it directly.
