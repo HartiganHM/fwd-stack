@@ -6,7 +6,7 @@
 import { execFileSync } from 'node:child_process';
 import { createReadStream, existsSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve as resolvePath } from 'node:path';
+import { basename, dirname, join, resolve as resolvePath } from 'node:path';
 import { createInterface } from 'node:readline';
 
 import { newTally, render, tally } from './usage-core.mjs';
@@ -38,17 +38,27 @@ walk(root);
 // A worktree kept outside its repository (`../app-feature`) counts as the repository: git names
 // the shared folder. A folder since deleted keeps its own name.
 const roots = new Map();
+const git = (cwd, ...a) =>
+  execFileSync('git', ['-C', cwd, ...a], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  }).trim();
 const resolve = (cwd) => {
   if (!roots.has(cwd)) {
     let root = cwd;
     try {
       if (existsSync(cwd)) {
-        const common = execFileSync(
-          'git',
-          ['-C', cwd, 'rev-parse', '--git-common-dir'],
-          { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-        ).trim();
-        root = dirname(resolvePath(cwd, common));
+        // The shared git folder's parent is the repository only when that folder is `.git`; a
+        // submodule's (`.git/modules/<sub>`) or a separate git dir is not, so those use the
+        // checkout's own top level.
+        const common = resolvePath(
+          cwd,
+          git(cwd, 'rev-parse', '--git-common-dir'),
+        );
+        root =
+          basename(common) === '.git'
+            ? dirname(common)
+            : git(cwd, 'rev-parse', '--show-toplevel');
       }
     } catch {
       // Not a repository: the folder itself.
