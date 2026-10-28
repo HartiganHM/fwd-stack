@@ -66,19 +66,24 @@ fi
 
 # The plugin and the link go back to how they were: kept if they were there before this run.
 if [ -n "$WAS_LINK" ]; then ln -sfn "$WAS_LINK" "$CFG/fwd"; else rm -f "$CFG/fwd"; fi
+# Called last on every path: `claude` commands rewrite settings.json, so the backup's copy is written
+# again; on a machine that had none, the one the CLI created goes.
+restore_settings() {
+  if [ -f "$BACKUP/settings.json" ]; then
+    cp -p "$BACKUP/settings.json" "$CFG/settings.json"
+  elif [ "$SETTINGS_EXISTED" = 0 ]; then
+    rm -f "$CFG/settings.json"
+  fi
+}
 if [ "$WAS_INSTALLED" != 1 ]; then
   claude plugin uninstall fwd@fwd-stack --scope user >/dev/null 2>&1 || true
   # Success only when a listing that could be read shows the plugin absent; anything else is reported.
   if ! LISTED=$(claude plugin list --json 2>/dev/null) ||
     ! node -e 'process.exit(JSON.parse(process.argv[1]).some(x=>x.id==="fwd@fwd-stack")?1:0)' "$LISTED" 2>/dev/null; then
+    restore_settings
     echo "!! rollback restored your files, but could not confirm fwd@fwd-stack is uninstalled. Check 'claude plugin list' and remove it by hand."
     exit 1
   fi
-  # `plugin uninstall` rewrites settings.json (and normalises other keys as it does), so the
-  # backup's copy is written again last, byte for byte.
-  # On a machine that had no settings.json, the one the CLI created goes too.
-  if [ -f "$BACKUP/settings.json" ]; then cp -p "$BACKUP/settings.json" "$CFG/settings.json"
-  elif [ "$SETTINGS_EXISTED" = 0 ]; then rm -f "$CFG/settings.json"; fi
   echo "== rolled back; the plugin is uninstalled (it was not installed before)."
 else
   # Put the previous install back exactly: its cached copy and the install record that points at it.
@@ -90,3 +95,4 @@ else
   fi
   echo "== rolled back; the previous plugin install is restored."
 fi
+restore_settings

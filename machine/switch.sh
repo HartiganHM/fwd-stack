@@ -46,6 +46,12 @@ echo "== fwd switchover ($([ $DRY -eq 1 ] && echo DRY RUN || echo APPLY)), backu
 
 # Snapshot settings.json before the first `claude` command: the CLI rewrites it on any run
 # (normalising keys), so a copy taken later would not be what the user had.
+# A settings.json that exists but is not a readable regular file (a dangling or odd symlink) is the
+# user's to sort out first: the cleanup below would otherwise take it for absent and remove it.
+if { [ -e "$CFG/settings.json" ] || [ -L "$CFG/settings.json" ]; } && [ ! -f "$CFG/settings.json" ]; then
+  echo "$CFG/settings.json is not a regular file (a dangling symlink?); fix it first. Nothing changed."
+  exit 1
+fi
 PRE_SETTINGS=""
 SETTINGS_EXISTED=0
 if [ -f "$CFG/settings.json" ]; then
@@ -127,6 +133,9 @@ if [ "$WAS_INSTALLED" = 1 ]; then
 else
   run "claude plugin install fwd@fwd-stack --scope user"
 fi
+# Enabled is a setting, not part of the install: a machine that disabled it, or lost settings.json,
+# would otherwise end with the plugin installed and silent.
+run "claude plugin enable fwd@fwd-stack --scope user >/dev/null 2>&1 || claude plugin list --json | grep -q '\"enabled\": true'"
 
 # 3. Carry state into the plugin's data folder: the pre-open pass ledger.
 run "mkdir -p '$DATA'"
