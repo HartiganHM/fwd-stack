@@ -42,7 +42,19 @@ export function sessionSummary(jsonl) {
     model = e.message.model ?? model;
     at = e.timestamp ?? at;
   }
-  return { name: agentName ?? title, model, context, at };
+  return { name: agentName ?? title, agentName, title, model, context, at };
+}
+
+/**
+ * A lane's name from a transcript read in two windows. The tail holds the latest title and usage,
+ * but a lane's agent name is written once, at its start, and a long transcript pushes it out of the
+ * tail. So an agent name from either window wins, then the tail's title. The head's title is never
+ * used: a later rename can sit between the two windows, and the head's would be the superseded one.
+ */
+export function laneName(tailSummary, headSummary = {}) {
+  return (
+    tailSummary.agentName ?? headSummary.agentName ?? tailSummary.title ?? null
+  );
 }
 
 /**

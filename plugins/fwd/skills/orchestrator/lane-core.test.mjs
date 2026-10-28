@@ -2,7 +2,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { projectDirName, sessionSummary, verdict } from './lane-core.mjs';
+import {
+  laneName,
+  projectDirName,
+  sessionSummary,
+  verdict,
+} from './lane-core.mjs';
 
 const turn = (usage, extra = {}) =>
   JSON.stringify({
@@ -37,6 +42,8 @@ test("a session's context is its last turn's input, cache reads and cache writes
   ].join('\n');
   assert.deepEqual(sessionSummary(jsonl), {
     name: 'lane-7',
+    agentName: 'lane-7',
+    title: null,
     model: 'claude-opus-5-5',
     context: 402321,
     at: '2026-10-27T20:00:00Z',
@@ -75,4 +82,21 @@ test('a session renamed twice shows its latest title, and an agent name wins', (
   assert.equal(sessionSummary([t('old'), t('new')].join('\n')).name, 'new');
   const agent = JSON.stringify({ type: 'agent-name', agentName: 'lane-a' });
   assert.equal(sessionSummary([agent, t('new')].join('\n')).name, 'lane-a');
+});
+
+test('an agent name from the head wins over a title in the tail', () => {
+  const head = sessionSummary(
+    JSON.stringify({ type: 'agent-name', agentName: 'lane-a' }),
+  );
+  const tail = sessionSummary(
+    JSON.stringify({ type: 'custom-title', customTitle: 'later title' }),
+  );
+  assert.equal(laneName(tail, head), 'lane-a');
+  assert.equal(laneName(tail, {}), 'later title');
+  // A title only in the head may be superseded by a rename between the windows: not used.
+  const oldTitle = sessionSummary(
+    JSON.stringify({ type: 'custom-title', customTitle: 'old title' }),
+  );
+  assert.equal(laneName(sessionSummary(''), oldTitle), null);
+  assert.equal(laneName(sessionSummary(''), {}), null);
 });

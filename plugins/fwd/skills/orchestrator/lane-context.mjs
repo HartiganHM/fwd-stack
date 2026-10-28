@@ -13,7 +13,12 @@ import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 
 import { loadConfig } from '../../lib/fwd-config.mjs';
-import { projectDirName, sessionSummary, verdict } from './lane-core.mjs';
+import {
+  laneName,
+  projectDirName,
+  sessionSummary,
+  verdict,
+} from './lane-core.mjs';
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -54,25 +59,37 @@ const dirs = [...new Set([project, ...worktrees()].map(projectDirName))].map(
   (name) => join(configDir, 'projects', name),
 );
 
-// The tail is usually enough: the last turn's usage and the session's name are both near the end,
-// and a long transcript runs to tens of megabytes. One large tool result can push the last usage
+// The tail is usually enough for the last turn's usage and the latest title, and a long transcript
+// runs to tens of megabytes. A lane's agent name is the exception: it is written once, at the
+// start, so it is read from a separate head window when the tail has none (see summarize). One large tool result can push the last usage
 // out of the window, so the window doubles until a usage record is in it or the file is read whole.
 const TAIL = 4 * 1024 * 1024;
-const tail = (path, size, len) => {
+const HEAD = 1024 * 1024;
+const slice = (path, start, n) => {
   const fd = openSync(path, 'r');
   try {
-    const n = Math.min(size, len);
     const buf = Buffer.alloc(n);
-    readSync(fd, buf, 0, n, size - n);
+    readSync(fd, buf, 0, n, start);
     return buf.toString('utf8');
   } finally {
     closeSync(fd);
   }
 };
+const tail = (path, size, len) => {
+  const n = Math.min(size, len);
+  return slice(path, size - n, n);
+};
 const summarize = (path, size) => {
   for (let len = TAIL; ; len *= 2) {
     const s = sessionSummary(tail(path, size, len));
-    if (s.context !== null || len >= size) return s;
+    if (s.context !== null || len >= size) {
+      // The agent name is written at the start; read the head for it when the tail has none.
+      const head =
+        s.agentName || len >= size
+          ? {}
+          : sessionSummary(slice(path, 0, Math.min(size, HEAD)));
+      return { ...s, name: laneName(s, head) };
+    }
   }
 };
 
