@@ -69,3 +69,13 @@ test('a project file that is valid JSON but not an object keeps the machine list
       { 'br-a': 'production' },
     );
 });
+
+test('a file that exists but is not a JSON object is reported, and the rest still loads', () => {
+  const cfg = loadConfig({ CLAUDE_PROJECT_DIR: '/p' }, '/h', (path) => {
+    if (path === '/p/.claude/fwd.json') throw new SyntaxError('bad json');
+    return { neon: { protected: { 'br-a': 'production' } } };
+  });
+  assert.deepEqual(cfg.invalid, ['/p/.claude/fwd.json']);
+  assert.deepEqual(cfg.neon.protected, { 'br-a': 'production' });
+  assert.deepEqual(loadConfig({}, '/h', () => ({})).invalid, []);
+});

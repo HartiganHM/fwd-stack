@@ -17,16 +17,18 @@ import { join } from 'node:path';
 
 const isObject = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
+// A missing file is no config. A file that exists but cannot be read or parsed throws: reading it
+// as empty would drop its protected ids, so a typo in fwd.json would lift the Neon guard.
 const readJson = (path) => {
+  let text;
   try {
-    return JSON.parse(readFileSync(path, 'utf8'));
-  } catch {
-    return {};
+    text = readFileSync(path, 'utf8');
+  } catch (e) {
+    if (e.code === 'ENOENT') return {};
+    throw e;
   }
+  return JSON.parse(text);
 };
-// Anything but a JSON object reads as no config: a `null` file made loadConfig throw, and the Neon
-// hook then exited without a decision, machine protection included.
-const asConfig = (v) => (isObject(v) ? v : {});
 
 export function mergeConfig(base, over) {
   const out = { ...base };
@@ -41,9 +43,23 @@ export function loadConfig(
   read = readJson,
 ) {
   const configDir = env.CLAUDE_CONFIG_DIR || join(home, '.claude');
-  const machine = asConfig(read(join(configDir, 'fwd.json')));
+  // `invalid` lists the files that exist but are not a JSON object. The Neon hook denies while it
+  // is non-empty; everything else reads the rest of the config as usual.
+  const invalid = [];
+  const load = (path) => {
+    let v;
+    try {
+      v = read(path);
+    } catch {
+      v = undefined;
+    }
+    if (isObject(v)) return v;
+    invalid.push(path);
+    return {};
+  };
+  const machine = load(join(configDir, 'fwd.json'));
   const project = env.CLAUDE_PROJECT_DIR
-    ? asConfig(read(join(env.CLAUDE_PROJECT_DIR, '.claude', 'fwd.json')))
+    ? load(join(env.CLAUDE_PROJECT_DIR, '.claude', 'fwd.json'))
     : {};
   const merged = mergeConfig(machine, project);
   // Only objects join the union: a project setting `protected` to null or [] cannot wipe the
@@ -56,5 +72,6 @@ export function loadConfig(
       ...ids(project.neon?.protected),
     },
   };
+  merged.invalid = invalid;
   return merged;
 }

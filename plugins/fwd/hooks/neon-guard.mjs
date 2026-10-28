@@ -56,9 +56,13 @@ const READ_CALLS = new Set(
     'pg_total_relation_size pg_relation_size pg_database_size pg_column_size'
   ).split(' '),
 );
+// The whole identifier is checked, schema included: `app.lower(` is an application function that
+// merely ends in a builtin's name. Only `pg_catalog.` may qualify a call. Any non-ASCII outside a
+// literal is denied first, so `élower(` cannot pass as `lower(`.
 const callsOnlyReads = (sql) =>
-  [...sql.matchAll(/(\w+)\s*\(/g)].every(([, name]) =>
-    READ_CALLS.has(name.toLowerCase()),
+  !/[^\p{ASCII}]/u.test(sql) &&
+  [...sql.matchAll(/([\w.]+)\s*\(/g)].every(([, name]) =>
+    READ_CALLS.has(name.toLowerCase().replace(/^pg_catalog\./, '')),
   );
 
 // Tools whose branch is optional and defaults to the project's default branch.
@@ -70,6 +74,7 @@ const TAKES_BRANCH = new Set([
   'describe_table_schema',
   'get_database_tables',
   'describe_branch',
+  'get_realtime_secret',
 ]);
 
 /** null to allow, or the reason to deny. `protectedIds` maps a branch or endpoint id to a label. */

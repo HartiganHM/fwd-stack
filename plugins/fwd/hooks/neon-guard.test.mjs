@@ -211,3 +211,27 @@ test('only read-only builtins may be called on a protected branch', () => {
       sql,
     );
 });
+
+test('a call is checked by its whole identifier', () => {
+  for (const sql of ["select app.lower('x')", "select \u00e9lower('x')"])
+    assert.match(
+      neonDecision('run_sql', { branch_id: 'br-prod', sql }, prod),
+      /one read statement/,
+      sql,
+    );
+  assert.equal(
+    neonDecision(
+      'run_sql',
+      {
+        branch_id: 'br-prod',
+        sql: "select pg_catalog.lower('x'), 'caf\u00e9'",
+      },
+      prod,
+    ),
+    null,
+  );
+});
+
+test('the Realtime secret with no branch is read from production, so it is denied', () => {
+  assert.match(neonDecision('get_realtime_secret', {}, prod), /exposes/);
+});

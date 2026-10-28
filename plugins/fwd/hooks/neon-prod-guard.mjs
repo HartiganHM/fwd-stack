@@ -17,11 +17,15 @@ try {
 const name = String(input.tool_name ?? '');
 if (!name.startsWith('mcp__neon__')) process.exit(0);
 
-const reason = neonDecision(
-  name.slice('mcp__neon__'.length),
-  input.tool_input ?? {},
-  loadConfig().neon.protected,
-);
+const config = loadConfig();
+// An unreadable fwd.json may have held protected ids, so nothing passes until it is fixed.
+const reason = config.invalid.length
+  ? `${config.invalid.join(', ')} is not a readable JSON object, so the protected branches are unknown.`
+  : neonDecision(
+      name.slice('mcp__neon__'.length),
+      input.tool_input ?? {},
+      config.neon.protected,
+    );
 if (reason)
   process.stdout.write(
     JSON.stringify({
