@@ -10,7 +10,7 @@
 // stopping at the first let `gh pr merge feat/x; gh pr merge 42` through on the unreadable one.
 //
 //   node parse-command.mjs '<command>'   prints `<action> <pr> [<owner/name>]` per gated command
-import { pathToFileURL } from 'node:url';
+import { isMain } from '../../lib/is-main.mjs';
 
 const REPO = '[A-Za-z0-9._-]+/[A-Za-z0-9._-]+';
 
@@ -426,10 +426,7 @@ export function unreadableLine(cmd) {
   );
 }
 
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (isMain(import.meta.url)) {
   const cmd = process.argv[2] ?? '';
   const parsed = parseCommand(cmd);
   if (unreadableLine(cmd)) console.log('unreadable');

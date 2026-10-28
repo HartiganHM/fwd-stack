@@ -5,7 +5,7 @@
 // that measures lanes' real context replaces this where one runs; this is the backstop for a
 // session nobody is watching.
 import { readFileSync } from 'node:fs';
-import { pathToFileURL } from 'node:url';
+import { isMain } from '../lib/is-main.mjs';
 
 import { loadConfig } from '../lib/fwd-config.mjs';
 
@@ -35,10 +35,7 @@ export function budgetMessage(turns, { warn = 20, critical = 35 } = {}) {
 }
 
 // Run as a hook, not when a test imports it. (`import.meta.main` would do, but needs Node 24.2.)
-if (
-  process.argv[1] &&
-  import.meta.url === pathToFileURL(process.argv[1]).href
-) {
+if (isMain(import.meta.url)) {
   let payload = {};
   try {
     payload = JSON.parse(readFileSync(0, 'utf8') || '{}');
