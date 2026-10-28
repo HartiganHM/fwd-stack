@@ -14,7 +14,10 @@ export const projectDirName = (path) =>
   resolve(path).replace(/[^A-Za-z0-9]/g, '-');
 
 export function sessionSummary(jsonl) {
-  let name = null;
+  // The latest of each: a session renamed twice shows its current name. A lane's agent name, when
+  // it has one, wins over a title.
+  let agentName = null;
+  let title = null;
   let model = null;
   let context = null;
   let at = null;
@@ -26,9 +29,8 @@ export function sessionSummary(jsonl) {
     } catch {
       continue; // a partial first line from a tail read, or a line being written
     }
-    if (e.type === 'agent-name' && e.agentName) name = e.agentName;
-    else if (e.type === 'custom-title' && e.customTitle && !name)
-      name = e.customTitle;
+    if (e.type === 'agent-name' && e.agentName) agentName = e.agentName;
+    else if (e.type === 'custom-title' && e.customTitle) title = e.customTitle;
     // A subagent's turns are written to the same transcript; they do not grow this session.
     if (e.type !== 'assistant' || e.isSidechain) continue;
     const u = e.message?.usage;
@@ -40,7 +42,7 @@ export function sessionSummary(jsonl) {
     model = e.message.model ?? model;
     at = e.timestamp ?? at;
   }
-  return { name, model, context, at };
+  return { name: agentName ?? title, model, context, at };
 }
 
 /**

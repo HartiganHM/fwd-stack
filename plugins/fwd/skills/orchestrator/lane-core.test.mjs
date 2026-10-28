@@ -68,3 +68,11 @@ test('a relative or trailing-slash project path names the same transcript folder
   assert.equal(projectDirName('.'), projectDirName(process.cwd()));
   assert.equal(projectDirName('/a/b/'), projectDirName('/a/b'));
 });
+
+test('a session renamed twice shows its latest title, and an agent name wins', () => {
+  const t = (customTitle) =>
+    JSON.stringify({ type: 'custom-title', customTitle });
+  assert.equal(sessionSummary([t('old'), t('new')].join('\n')).name, 'new');
+  const agent = JSON.stringify({ type: 'agent-name', agentName: 'lane-a' });
+  assert.equal(sessionSummary([agent, t('new')].join('\n')).name, 'lane-a');
+});
