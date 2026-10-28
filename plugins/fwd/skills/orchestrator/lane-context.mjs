@@ -59,8 +59,9 @@ const dirs = [...new Set([project, ...worktrees()].map(projectDirName))].map(
   (name) => join(configDir, 'projects', name),
 );
 
-// The tail is usually enough: the last turn's usage and the session's name are both near the end,
-// and a long transcript runs to tens of megabytes. One large tool result can push the last usage
+// The tail is usually enough for the last turn's usage and the latest title, and a long transcript
+// runs to tens of megabytes. A lane's agent name is the exception: it is written once, at the
+// start, so it is read from a separate head window when the tail has none (see summarize). One large tool result can push the last usage
 // out of the window, so the window doubles until a usage record is in it or the file is read whole.
 const TAIL = 4 * 1024 * 1024;
 const HEAD = 1024 * 1024;
