@@ -1,6 +1,7 @@
 ---
 name: prose-pass
-description: Use when writing or rewriting LONG-FORM in-app prose that users read as paragraphs in the owner's own apps: About entries, How it works pages, explainers, user-facing briefs. Rewrites it in the project's calibrated voice with a fact inventory before and a fact-diff after, so nothing shipped is lost and nothing stale is added. Own apps only. Not for UI strings (buttons, labels, errors, empty states): those belong to /copy-review.
+description: >-
+  Use when writing or rewriting LONG-FORM in-app prose that users read as paragraphs in the owner's own apps: About entries, How it works pages, explainers, user-facing briefs. Rewrites it in the project's calibrated voice with a fact inventory before and a fact-diff after, so nothing shipped is lost and nothing stale is added. Own apps only. Not for UI strings (buttons, labels, errors, empty states): those belong to /copy-review.
 ---
 
 # Prose Pass

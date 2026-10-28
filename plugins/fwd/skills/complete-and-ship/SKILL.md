@@ -421,9 +421,11 @@ Anchor the patterns on path segments: a bare `email` or `push` matches unrelated
 
 **Inline strings: check for a mechanical backstop before relying on one.** If the project's lint
 config enables a rule that forbids inline literals (such as `react/jsx-no-literals`), a clean
-lint already satisfies the inline-string trigger. The lint config itself is the one place to
-check: grep it directly (an extension may note the answer, but the config wins). If it does
-not enable such a rule, read the diff for new user-visible literals by hand.
+lint covers JSX text, and only JSX text. The lint config itself is the one place to check:
+grep it directly (an extension may note the answer, but the config wins). Either way, read the
+diff for user-visible strings the rule cannot see: arguments to functions such as
+`toast.error(...)`, strings assigned to variables or constants, and error messages that reach
+the screen. Without such a rule, read the diff for every new user-visible literal by hand.
 
 No match and no inline strings → skip to Step 6 and say so. Match → run `copy-review`, fix what it flags, re-run the quality gate, then open the PR.
 
@@ -434,6 +436,10 @@ Flag drift there to the user instead of editing it.
 ---
 
 ### 6. Open PR
+
+Publish the branch first: the bootstrap created it locally, and `gh pr create` prompts or
+aborts without a remote head in an unattended run. `git push -u origin HEAD`, after the pre-PR
+gates have passed.
 
 If the project has a PR template (`.github/pull_request_template.md` or a file under
 `.github/PULL_REQUEST_TEMPLATE/`), use it as the base and fold the sections below into it.
@@ -660,7 +666,7 @@ The plan file is the resume token. A fresh session invoking `/complete-and-ship`
 | Step 3–4 (quality gate / spec work) | Re-run quality gate, re-verify spec and design assets                      |
 | Step 5–6 (env scan / PR open)       | Check if PR exists (`gh pr list`); create if not, skip if already open     |
 | Step 7 (Copilot review requested)   | Re-arm pr-review's watcher; run the stale-review check on any review there |
-| Step 8–9 (fixes pushed)             | Go straight to Step 10 (CI gate and merge)                                 |
+| Step 8–9 (fixes pushed)             | Run pr-review's gate; resume any owed re-request, wait or triage, then 10  |
 | Step 10 (watching CI)               | Re-run `gh pr checks --watch`; merge if the bar and CI are green           |
 
 ### On hitting a turn limit mid-task

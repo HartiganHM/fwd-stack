@@ -35,9 +35,9 @@ This is the key mental model. There are **two** ways content can be wider than t
 
 **1. Flow overflow.** A normally-positioned element is wider than its parent. This is contained by an ancestor's `overflow-x: hidden` or `clip`. Container fixes work here.
 
-**2. Positioned-element overflow.** An element with `position: absolute` (or `fixed`) resolves its geometry against its **containing block** — the nearest ancestor with `position` other than `static`. If no such ancestor exists, the containing block is the **initial containing block** (effectively `<html>`). Such an element measures against `html.scrollWidth` and **bypasses every `overflow` rule on the ancestors in between**, because those ancestors are not its containing block.
+**2. Positioned-element overflow.** An element with `position: absolute` resolves its geometry against its **containing block**: the nearest ancestor with `position` other than `static` (or a `transform`, `filter` or `contain: layout`). If no such ancestor exists, the containing block is the **initial containing block** (effectively `<html>`). A `position: fixed` element is different: its containing block is the viewport, and only an ancestor with a `transform`, `filter` or `contain: layout` captures it. A positioned ancestor does not. Such an element measures against `html.scrollWidth` and **bypasses every `overflow` rule on the ancestors in between**, because those ancestors are not its containing block.
 
-No amount of `overflow-hidden` on an intermediate `<div>` will clip an absolutely-positioned descendant that isn't inside it in the positioning sense. The fix is almost always adding `position: relative` to the right ancestor, not adding another overflow property.
+No amount of `overflow-hidden` on an intermediate `<div>` will clip an absolutely-positioned descendant that isn't inside it in the positioning sense. For an absolute element the fix is almost always adding `position: relative` to the right ancestor, not adding another overflow property. For a fixed element, `position: relative` does nothing; constrain the element itself, or move it.
 
 **The Tailwind trap:** utilities apply `position: absolute` without saying so in a name you'd recognize. `.sr-only` is the classic — it's `position: absolute` plus clipping, and it's usually invisible so it never occurs to anyone. Others to watch: `.absolute`, `.fixed`, `.inset-0`, and any component library primitive (Radix portals, tooltips, popovers).
 
@@ -106,11 +106,13 @@ For each hit, walk up the ancestor chain and find where its containing block act
 
 ```js
 function containingBlock(el) {
+  // A fixed element ignores positioned ancestors; only these capture it.
+  const fixed = getComputedStyle(el).position === 'fixed';
   let node = el.parentElement;
   while (node) {
     const cs = getComputedStyle(node);
     if (
-      cs.position !== 'static' ||
+      (!fixed && cs.position !== 'static') ||
       cs.transform !== 'none' ||
       cs.filter !== 'none' ||
       cs.contain?.includes('layout')
@@ -118,11 +120,11 @@ function containingBlock(el) {
       return node;
     node = node.parentElement;
   }
-  return document.documentElement; // escaped to the ICB — this is the bug
+  return document.documentElement; // the ICB (absolute) or the viewport (fixed)
 }
 ```
 
-If it returns `<html>`, that's your answer. **The fix is `position: relative` on the wrapper that should have owned it**, not another `overflow` property.
+If it returns `<html>` for an absolute element, that's your answer. **The fix is `position: relative` on the wrapper that should have owned it**, not another `overflow` property. For a fixed element, `<html>` is the normal result: constrain its own width or placement instead.
 
 ### Step 4 — Fix once, then re-measure
 

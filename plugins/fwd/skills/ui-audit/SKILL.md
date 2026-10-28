@@ -198,7 +198,7 @@ Ask the user one of:
 
 ### Step 1 — Upload the screenshot to the orphan artifacts branch
 
-The `ui-audit-artifacts` branch is a repo-owned artifact store. Never merged. Screenshots on it resolve at `raw.githubusercontent.com` for issue bodies.
+The `ui-audit-artifacts` branch is a repo-owned artifact store. Never merged. In a public repository, screenshots on it resolve at `raw.githubusercontent.com` for issue bodies. A private repository's raw URLs need a token, so there use the authenticated blob link (`https://github.com/$REPO/blob/ui-audit-artifacts/<path>?raw=true`), which renders for anyone with access. Never put a token in a URL.
 
 Anchor the artifacts worktree on the **main checkout**, not on whichever worktree you are in: a path built from `git rev-parse --show-toplevel` would nest the artifacts worktree inside the current worktree, and the existence check would miss one created from elsewhere. Make sure `.worktrees/` is git-ignored in the project.
 
@@ -213,6 +213,8 @@ if ! git -C "$MAIN_DIR" worktree list --porcelain | grep -qxF "worktree $ARTIFAC
   if git -C "$MAIN_DIR" show-ref --verify --quiet refs/heads/ui-audit-artifacts \
     || git -C "$MAIN_DIR" fetch origin ui-audit-artifacts:ui-audit-artifacts 2>/dev/null; then
     git -C "$MAIN_DIR" worktree add "$ARTIFACTS" ui-audit-artifacts
+    # A branch fetched into a local ref has no upstream; set it, or the bare push below fails.
+    git -C "$ARTIFACTS" branch --set-upstream-to=origin/ui-audit-artifacts
   else
     # First run anywhere: create the orphan branch (needs git 2.42+ for --orphan).
     git -C "$MAIN_DIR" worktree add --orphan -b ui-audit-artifacts "$ARTIFACTS"
@@ -230,8 +232,10 @@ git -C "$ARTIFACTS" commit -m "ui-audit: <runId>/<file>.png"
 git -C "$ARTIFACTS" push
 ```
 
-The screenshot URL is then:
+The screenshot URL is then, for a public repository:
 `https://raw.githubusercontent.com/$REPO/ui-audit-artifacts/<runId>/<file>.png`
+and for a private one:
+`https://github.com/$REPO/blob/ui-audit-artifacts/<runId>/<file>.png?raw=true`
 
 **Safety rails:**
 
@@ -257,7 +261,7 @@ gh api -X POST "/repos/$REPO/issues" \
 3. If interaction state != default, perform: <interaction description from the sweep's route definition>
 
 ## Evidence
-![screenshot](https://raw.githubusercontent.com/$REPO/ui-audit-artifacts/<runId>/<file>.png)
+![screenshot](<the screenshot URL from Step 1>)
 
 ---
 _Filed by \`ui-audit\` skill. Run id: \`<runId>\`._

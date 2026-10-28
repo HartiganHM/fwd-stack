@@ -60,14 +60,14 @@ Missing briefing → interview the user using `briefing-template.md` (in this sk
 
 ## Run Loop — per PR, in execution-plan order
 
-1. **Worktree:** anchor on the main checkout, not the current directory: `MAIN_REPO="$(git worktree list --porcelain | sed -n '1s/^worktree //p')"`, then `git -C "$MAIN_REPO" worktree add "$MAIN_REPO/.worktrees/<branch>" -b <branch>` (or the worktree location the extension names), then immediately copy each app's untracked local env file (e.g. `.env.local`) from the main checkout into the worktree at the same relative path — the extension lists which apps have one. Never commit them.
+1. **Worktree:** anchor on the main checkout, not the current directory: `MAIN_REPO="$(git worktree list --porcelain | sed -n '1s/^worktree //p')"`, then `git -C "$MAIN_REPO" fetch origin && git -C "$MAIN_REPO" worktree add "$MAIN_REPO/.worktrees/<branch>" -b <branch> origin/main` (from `origin/main`, never the main checkout's local HEAD, which can lag a predecessor PR that merged remotely) (or the worktree location the extension names), then immediately copy each app's untracked local env file (e.g. `.env.local`) from the main checkout into the worktree at the same relative path — the extension lists which apps have one. Never commit them.
 2. **Build:** TDD (superpowers:test-driven-development). May delegate to a subagent: implement + test + open PR only. Never include review-waiting in a subagent task.
 3. **Run the gates scoped to this PR's shape (see "Which gates fire when") before `gh pr create`, and read the Recurring Defect Classes list on every UI PR.** Pixel-perfect is the bar. Mobile + desktop parity in the same PR. No UI PR is exempt — animation-only and "visual-only" included.
 4. **Pre-push, every push:** typecheck + lint + test in the worktree, then `git fetch origin && git rebase origin/main`. Plain push unless the rebase rewrote commits (then `--force-with-lease`).
 5. **Review cycle (orchestrator-owned):** invoke the `pr-review` skill and follow it — request, verify the attach, wait on its watcher (`pr-watch.mjs` via `Monitor`, armed once when the PR opens and re-armed when it times out), check the review is not stale before triaging, fix every valid comment including nits, re-request only where it says a fix earns one, and stop on its bar. The orchestrator — never a subagent — owns the full cycle; the multi-minute wait exceeds a subagent's window.
 6. **Merge:** merge it yourself once pr-review's gate allows it (merge bar met, CI green), with the merge method the project uses. No auto-merge flags. Then verify the staging + prod deploy workflows actually ran — some merge paths (for example a merge made through the API rather than the UI) do not trigger them; dispatch manually if so.
-7. **Bookkeeping:** the project's release-note or changelog entry for user-facing PRs, any progress log the project keeps (the extension names both), and GH issues immediately for any follow-up identified. Same branch, before merge.
-   **Any follow-up that needs Design input also needs a tracker row in `docs/superpowers/design-pipeline-status.md` — the label alone loses it.** `design-status` parses that file and never queries issue labels, so a design-labelled ticket with no row is invisible to the pipeline. Judge by the fix, not the label: a missing affordance, a placement call or a new surface is design work even when the ticket reads like a bug or a polish item. Add the row on the branch already in flight. This step is skipped constantly because the issue _feels_ filed once `gh issue create` returns.
+7. **Bookkeeping:** the project's release-note or changelog entry for user-facing PRs, any progress log the project keeps (the extension names both), and any follow-up identified collected as a proposal under `backlog-audit`'s intake rule (Step 5): no issue is opened without the user's sign-off, and during an unattended run proposals go into the run report's Proposed intake. Same branch, before merge.
+   **Any approved follow-up that needs Design input also needs a tracker row in `docs/superpowers/design-pipeline-status.md` — the label alone loses it.** `design-status` parses that file and never queries issue labels, so a design-labelled ticket with no row is invisible to the pipeline. Judge by the fix, not the label: a missing affordance, a placement call or a new surface is design work even when the ticket reads like a bug or a polish item. Add the row once the follow-up is approved and filed, on the branch then in flight. This step is skipped constantly because the issue _feels_ filed once `gh issue create` returns.
    **Infrastructure the PR depends on must be created, not just declared.** The project's hosting config (e.g. `render.yaml`, `vercel.json`) may be descriptive only — editing it does not necessarily create anything. If a PR adds a cron job, worker, queue, bucket or DB, provision it for real (the provider's MCP tools, CLI or dashboard) in _both_ staging and prod before calling the PR done. Where you genuinely can't — MCP can't home a service to an environment, a secret is the user's to paste — create what you can and carry the gap into the run report's infra table as `⚠️ declared only`. A cron that was never created is the worst failure shape there is: it logs nothing, errors nothing, pages nobody, and the feature silently never runs.
 8. **Checkpoint:** update the run's checkpoint note with exact state + next step, confirm main repo dir clean, compact.
 
@@ -305,10 +305,11 @@ quality gate before `gh pr create`. The binding file also names the project's fr
 flag drift there to the user rather than editing.
 
 **Check whether the project has a mechanical backstop before relying on one.** Where a lint
-rule forbids inline literals (such as `react/jsx-no-literals`), a clean lint already satisfies
-the inline-string trigger. The lint config itself is the one place to check: grep it directly
-(the extension may note the answer, but the config wins). Where it has no such rule, the diff
-must be read for inline strings by hand. Lint catches placement either way; this gate catches voice, length and vocabulary.
+rule forbids inline literals (such as `react/jsx-no-literals`), a clean lint covers JSX text
+only. The lint config itself is the one place to check: grep it directly (the extension may
+note the answer, but the config wins). Either way, read the diff for strings the rule cannot
+see: function arguments such as `toast.error(...)`, strings in variables, and on-screen error
+messages. Where it has no such rule, the diff must be read for every inline string by hand. Lint catches placement either way; this gate catches voice, length and vocabulary.
 
 Skip the gate, with a line saying why, on a PR that touches no copy at all.
 

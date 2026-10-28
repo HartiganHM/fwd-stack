@@ -15,7 +15,8 @@
 ## Current state (verified YYYY-MM-DD)
 
 Only claims verified on the stated date, with enough detail to re-verify at
-kickoff. Cover: env vars (name, where placed, staging vs prod values), external
+kickoff. Cover: env vars (name, environment scope, where placed, how verified; never the
+values themselves, since this file is committed), external
 accounts/services (live? configured?), things that intentionally do NOT exist
 yet (and when they get created), known anomalies to ignore (e.g. intentionally
 paused services).

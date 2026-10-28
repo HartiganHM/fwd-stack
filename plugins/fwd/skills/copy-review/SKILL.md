@@ -133,7 +133,7 @@ in the binding file's copy inventory, plus copy inside design handoffs.
 
 **Blast radius:** new and modified strings must be clean. **Untouched neighbours stay
 untouched.** Adding one entry does not obligate the other sixty. Never open a standalone
-repo-wide sweep PR; if a backlog is worth clearing, file an issue. The binding file carries
+repo-wide sweep PR; if a backlog is worth clearing, propose an issue (backlog-audit Step 5). The binding file carries
 the project's calibration, if it has been measured.
 
 **Where the project keeps release notes, they are a frozen record.** Only the entry being
@@ -287,19 +287,21 @@ the pass is a rewrite rather than an edit. Discard it and start over.
 A table: file, string, class, verdict, replacement. Never present a rewrite without the
 string it replaces.
 
-| Verdict   | Meaning                                                                                                                                                                                                              |
-| --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CUT`     | Delete the string. It is on screen and should not be                                                                                                                                                                 |
-| `TIGHTEN` | Keep the job, shorten or fix the wording                                                                                                                                                                             |
-| `RENAME`  | Vocabulary violation (rule 10)                                                                                                                                                                                       |
-| `TOOLTIP` | Useful but hideable. **Leave inline unchanged**, record for when a tooltip treatment exists                                                                                                                          |
-| `DEAD`    | No render site. The key exists in copy but nothing consumes it, so deleting it changes nothing on screen                                                                                                             |
-| `STALE`   | Accurate when written, wrong now, because the product shipped past it. Needs a fact change, not an edit                                                                                                              |
-| `DEFECT`  | The words are right but the plumbing is wrong: a string that never reaches the reader, two surfaces that contradict each other, an HTML/plain-text disagreement. **File it, do not edit it.** This is an eng finding |
-| `KEEP`    | Earns its place                                                                                                                                                                                                      |
+| Verdict   | Meaning                                                                                                                                                                                                                       |
+| --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `CUT`     | Delete the string. It is on screen and should not be                                                                                                                                                                          |
+| `TIGHTEN` | Keep the job, shorten or fix the wording                                                                                                                                                                                      |
+| `RENAME`  | Vocabulary violation (rule 10)                                                                                                                                                                                                |
+| `TOOLTIP` | Useful but hideable. **Leave inline unchanged**, record for when a tooltip treatment exists                                                                                                                                   |
+| `DEAD`    | No render site. The key exists in copy but nothing consumes it, so deleting it changes nothing on screen                                                                                                                      |
+| `STALE`   | Accurate when written, wrong now, because the product shipped past it. Needs a fact change, not an edit                                                                                                                       |
+| `DEFECT`  | The words are right but the plumbing is wrong: a string that never reaches the reader, two surfaces that contradict each other, an HTML/plain-text disagreement. **Propose an issue, do not edit it.** This is an eng finding |
+| `KEEP`    | Earns its place                                                                                                                                                                                                               |
 
 `DEAD`, `STALE` and `DEFECT` are reported, never silently fixed. They leave the copy pass
-and become issues, because each one is a code change wearing a copy costume.
+as issue proposals, because each one is a code change wearing a copy costume. Under
+`backlog-audit`'s intake rule (Step 5), a proposal becomes an issue only with the user's
+sign-off, in every mode including Propose.
 
 `TOOLTIP`, `DEAD`, `STALE` and `DEFECT` rows are exempt from the Self-check, which covers
 `CUT` and `TIGHTEN` only.
