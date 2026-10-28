@@ -53,13 +53,27 @@ test('bands: one for the warning, one for critical, then one per 100k past it', 
 
 test('a session is told once per band crossed, never again for the same band', () => {
   const env = { CLAUDE_PLUGIN_DATA: mkdtempSync(join(tmpdir(), 'budget-')) };
-  assert.equal(crossed('s1', 1, env), true);
-  assert.equal(crossed('s1', 1, env), false);
-  assert.equal(crossed('s1', 2, env), true);
-  assert.equal(crossed('s1', 2, env), false);
-  assert.equal(crossed('s2', 1, env), true, 'sessions are tracked apart');
-  assert.equal(crossed('s1', 0, env), false, 'a compacted session drops back');
-  assert.equal(crossed('s1', 1, env), true, 'and is warned again as it grows');
+  assert.equal(crossed('s1', 1, 10, env), true);
+  assert.equal(crossed('s1', 1, 11, env), false);
+  assert.equal(crossed('s1', 2, 12, env), true);
+  assert.equal(crossed('s1', 2, 13, env), false);
+  assert.equal(crossed('s2', 1, 10, env), true, 'sessions are tracked apart');
+  assert.equal(
+    crossed('s1', 1, 11, env),
+    false,
+    'a stale reading does not undo a newer band',
+  );
+  assert.equal(crossed('s1', 2, 14, env), false, 'so band 2 stays announced');
+  assert.equal(
+    crossed('s1', 0, 20, env),
+    false,
+    'a compacted session drops back',
+  );
+  assert.equal(
+    crossed('s1', 1, 21, env),
+    true,
+    'and is warned again as it grows',
+  );
 });
 
 test('parallel hook processes announce a band once between them', async () => {
@@ -70,7 +84,7 @@ test('parallel hook processes announce a band once between them', async () => {
     ...process.env,
     CLAUDE_PLUGIN_DATA: mkdtempSync(join(tmpdir(), 'budget-')),
   };
-  const script = `import { crossed } from ${JSON.stringify(new URL('./session-budget.mjs', import.meta.url).href)}; process.stdout.write(String(crossed('race', 2)));`;
+  const script = `import { crossed } from ${JSON.stringify(new URL('./session-budget.mjs', import.meta.url).href)}; process.stdout.write(String(crossed('race', 2, 100)));`;
   const outs = await Promise.all(
     Array.from({ length: 8 }, () =>
       run(process.execPath, ['--input-type=module', '-e', script], { env }),
@@ -106,7 +120,7 @@ test('context is the last main-session turn, read from the tail', () => {
     ].join('\n'),
   );
   assert.equal(
-    lastContext(file),
+    lastContext(file).context,
     250_020,
     'a subagent turn does not count; a big tool result is read past',
   );

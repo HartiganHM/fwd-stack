@@ -20,6 +20,7 @@ import {
   readdirSync,
   rmSync,
   statSync,
+  writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
 
@@ -67,24 +68,35 @@ export function lastContext(path) {
       closeSync(fd);
     }
     const { context } = sessionSummary(buf.toString('utf8'));
-    if (context !== null || n >= size) return context;
+    if (context !== null || n >= size) return { context, size };
   }
 }
 
 // One marker file per band announced to a session. Creating it with `wx` is atomic, so parallel
 // tool calls (each its own hook process) announce a band once between them. A drop, after
-// /compact, removes the markers above it, so growing back past a line warns again.
+// /compact, removes the markers above it, so growing back past a line warns again. Each marker
+// holds the transcript's size when it was written, and a drop removes only markers written from a
+// shorter transcript than its own reading: a delayed hook holding an older reading cannot undo a
+// newer one. The transcript only grows (compaction appends), so its size orders the readings.
 const stateDir = (sessionId, env) =>
   join(pluginDataDir(env), 'session-budget', sessionId.replace(/[^\w-]/g, '_'));
 
-export function crossed(sessionId, now, env = process.env) {
+export function crossed(sessionId, now, seen, env = process.env) {
   const dir = stateDir(sessionId, env);
   mkdirSync(dir, { recursive: true });
-  for (const f of readdirSync(dir))
-    if (Number(f) > now) rmSync(join(dir, f), { force: true });
+  for (const f of readdirSync(dir)) {
+    if (!(Number(f) > now)) continue;
+    let at = Infinity;
+    try {
+      at = Number(readFileSync(join(dir, f), 'utf8'));
+    } catch {
+      continue; // removed by another hook meanwhile
+    }
+    if (at < seen) rmSync(join(dir, f), { force: true });
+  }
   if (now === 0) return false;
   try {
-    closeSync(openSync(join(dir, String(now)), 'wx'));
+    writeFileSync(join(dir, String(now)), String(seen), { flag: 'wx' });
     return true;
   } catch (error) {
     if (error.code === 'EEXIST') return false;
@@ -101,8 +113,9 @@ if (isMain(import.meta.url)) {
     process.exit(0);
   }
   let context = null;
+  let size = 0;
   try {
-    context = lastContext(payload.transcript_path ?? '');
+    ({ context, size } = lastContext(payload.transcript_path ?? ''));
   } catch {
     process.exit(0);
   }
@@ -110,7 +123,10 @@ if (isMain(import.meta.url)) {
   const message = budgetMessage(context, l);
   if (payload.hook_event_name === 'PostToolUse') {
     // Recorded below the warning line too, so a session compacted back under it warns again.
-    if (!payload.session_id || !crossed(payload.session_id, band(context, l)))
+    if (
+      !payload.session_id ||
+      !crossed(payload.session_id, band(context, l), size)
+    )
       process.exit(0);
     console.log(
       JSON.stringify({
