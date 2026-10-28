@@ -106,13 +106,14 @@ if [ $DRY -eq 0 ]; then
   LEDGER_EXISTED=$([ -f "$DATA/precheck-ledger.json" ] && echo 1 || echo 0)
   printf 'WAS_INSTALLED=%s\nWAS_LINK=%q\nCLAUDE_MD=%q\nPREV_PATH=%q\nLEDGER_EXISTED=%s\nSETTINGS_EXISTED=%s\n' \
     "$WAS_INSTALLED" "$WAS_LINK" "$CLAUDE_MD" "$PREV_PATH" "$LEDGER_EXISTED" "$SETTINGS_EXISTED" >"$BACKUP/state"
-  # From here the backup holds the original, and rollback (not the EXIT trap) restores it.
-  COMMITTED=1
   echo "$BACKUP" >"$CFG/backups/fwd-switchover-last"
   # From here, any failure rolls back to this backup.
   trap 'echo "!! step failed: rolling back from $BACKUP"; "$HERE/rollback.sh" "$BACKUP"; exit 1' ERR
   # An interruption (Ctrl-C, a closed terminal) rolls back too, rather than leaving half a switch.
   trap 'trap - ERR INT TERM HUP; echo "!! interrupted: rolling back from $BACKUP"; "$HERE/rollback.sh" "$BACKUP"; exit 130' INT TERM HUP
+  # Only now, with the backup complete and every rollback trap armed, does rollback (not the EXIT
+  # trap) take over restoring settings.json.
+  COMMITTED=1
 fi
 
 # 2. Install the plugin from its GitHub marketplace, or bring an existing install up to date.
