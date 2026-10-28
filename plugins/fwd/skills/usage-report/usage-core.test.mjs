@@ -113,3 +113,38 @@ test('a turn whose later lines raise its output count counts once, at the larges
   assert.equal(acc.sessions.get('s').turns, 1);
   assert.equal(acc.sessions.get('s').weight, 5100);
 });
+
+test('the latest title names a session unless an agent name was given; the median of an even count is the mean of the middle two', () => {
+  const t = (type, extra) => JSON.stringify({ type, sessionId: 's', ...extra });
+  const usage = (id, read) =>
+    JSON.stringify({
+      type: 'assistant',
+      sessionId: 's',
+      cwd: '/h/P/a',
+      timestamp: '2026-10-28T10:00:00Z',
+      requestId: id,
+      message: { id, usage: { cache_read_input_tokens: read } },
+    });
+  let acc = tally(
+    [
+      t('custom-title', { customTitle: 'old' }),
+      t('custom-title', { customTitle: 'new' }),
+      usage('a', 100_000),
+      usage('b', 400_000),
+    ],
+    { home: '/h' },
+  );
+  assert.equal(acc.names.get('s'), 'new');
+  assert.match(
+    render(acc, { days: 7 }),
+    /\| new \| ~\/P\/a \| 100% \| 2 \| 250k \| 400k \|/,
+  );
+  acc = tally(
+    [
+      t('agent-name', { agentName: 'lane-a' }),
+      t('custom-title', { customTitle: 'later' }),
+    ],
+    { home: '/h' },
+  );
+  assert.equal(acc.names.get('s'), 'lane-a');
+});

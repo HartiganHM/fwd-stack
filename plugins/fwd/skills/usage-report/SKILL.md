@@ -10,8 +10,10 @@ description: >-
 # usage-report
 
 The weekly allowance is shared by Claude Code, claude.ai chat and Claude Design. Only Claude Code
-leaves a log on this machine, so this report covers Claude Code's share. The difference between
-it and the meter in claude.ai's usage settings (or `/usage`) is chat and Design.
+leaves a log on this machine, so this report covers Claude Code alone: chat and Design are not
+observed. Its shares are of a weighted token count, not of the allowance, so they cannot be
+subtracted from the meter in claude.ai's usage settings (or `/usage`) to find what chat and Design
+used. Read the meter for the total, and this report for where Claude Code's part goes.
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/skills/usage-report/usage-report.mjs" [--days 7] [--top 10]

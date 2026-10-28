@@ -50,12 +50,16 @@ export function tally(
     } catch {
       continue;
     }
-    if (e.type === 'agent-name' && e.agentName)
+    // An agent name wins over any title; among titles the latest wins, so a renamed session shows
+    // its current name.
+    if (e.type === 'agent-name' && e.agentName) {
       acc.names.set(e.sessionId, e.agentName);
+      acc.agentNamed.add(e.sessionId);
+    }
     if (
       e.type === 'custom-title' &&
       e.customTitle &&
-      !acc.names.has(e.sessionId)
+      !acc.agentNamed.has(e.sessionId)
     )
       acc.names.set(e.sessionId, e.customTitle);
     if (e.type !== 'assistant' || !e.message?.usage) continue;
@@ -99,6 +103,7 @@ export const newTally = () => ({
   total: 0,
   seen: new Map(),
   names: new Map(),
+  agentNamed: new Set(),
   sessions: new Map(),
   byProject: new Map(),
   byModel: new Map(),
@@ -110,7 +115,8 @@ const add = (m, k, v) => m.set(k, (m.get(k) ?? 0) + v);
 const median = (xs) => {
   if (!xs.length) return 0;
   const s = [...xs].sort((a, b) => a - b);
-  return s[Math.floor(s.length / 2)];
+  const mid = Math.floor(s.length / 2);
+  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
 };
 const pct = (v, t) => `${t ? Math.round((1000 * v) / t) / 10 : 0}%`;
 const k = (n) => `${Math.round(n / 1000)}k`;
@@ -120,7 +126,7 @@ export function render(acc, { days, top = 10 } = {}) {
   const lines = [
     `# Claude Code usage, last ${days} days`,
     '',
-    'Shares of a weighted token count (input 1, cache write 1.25, cache read 0.1, output 5): a proxy for the weekly allowance, not the meter. Claude Design and claude.ai chat draw on the same allowance and leave no local log; `/usage` shows the real total.',
+    'Shares of a weighted token count (input 1, cache write 1.25, cache read 0.1, output 5): a proxy for the weekly allowance, not the meter. Claude Design and claude.ai chat draw on the same allowance and leave no local log, so their use is not observed here; `/usage` shows the meter, which this cannot be subtracted from.',
     '',
     '| Project | Share |',
     '| --- | --- |',
