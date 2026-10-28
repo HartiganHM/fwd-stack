@@ -28,16 +28,23 @@ done
 [ -d "$BACKUP/hooks" ] && { mkdir -p "$CFG/hooks"; cp -Rp "$BACKUP/hooks/." "$CFG/hooks/"; }
 [ -d "$BACKUP/lib" ] && { mkdir -p "$CFG/lib"; cp -Rp "$BACKUP/lib/." "$CFG/lib/"; }
 
-# A ledger this run carried into the data folder goes; the restored legacy ledger is the record again.
-[ "$LEDGER_EXISTED" = 0 ] && rm -f "$CFG/plugins/data/fwd-fwd-stack/precheck-ledger.json"
+# When the plugin goes, its data folder goes with it (`plugin uninstall` deletes it). The ledger there
+# holds everything the legacy one did plus any entries recorded since the switch, so it moves back to
+# the legacy path the restored skill reads, and nothing recorded after the switch is lost.
+LEDGER="$CFG/plugins/data/fwd-fwd-stack/precheck-ledger.json"
+if [ "$WAS_INSTALLED" != 1 ] && [ "$LEDGER_EXISTED" = 0 ] && [ -f "$LEDGER" ]; then
+  mkdir -p "$CFG/skills/pr-review"
+  mv "$LEDGER" "$CFG/skills/pr-review/precheck-ledger.json"
+fi
 
 # The plugin and the link go back to how they were: kept if they were there before this run.
 if [ -n "$WAS_LINK" ]; then ln -sfn "$WAS_LINK" "$CFG/fwd"; else rm -f "$CFG/fwd"; fi
 if [ "$WAS_INSTALLED" != 1 ]; then
   claude plugin uninstall fwd@fwd-stack --scope user >/dev/null 2>&1 || true
-  # Absent already is success; still listed is a real failure, reported rather than hidden.
-  if claude plugin list --json 2>/dev/null | grep -q '"fwd@fwd-stack"'; then
-    echo "!! rollback restored your files, but 'claude plugin uninstall fwd@fwd-stack' failed: the plugin is still installed. Remove it by hand."
+  # Success only when a listing that could be read shows the plugin absent; anything else is reported.
+  if ! LISTED=$(claude plugin list --json 2>/dev/null) ||
+    ! node -e 'process.exit(JSON.parse(process.argv[1]).some(x=>x.id==="fwd@fwd-stack")?1:0)' "$LISTED" 2>/dev/null; then
+    echo "!! rollback restored your files, but could not confirm fwd@fwd-stack is uninstalled. Check 'claude plugin list' and remove it by hand."
     exit 1
   fi
   echo "== rolled back; the plugin is uninstalled (it was not installed before)."
