@@ -53,7 +53,9 @@ const READ_CALLS = new Set(
     'age interval make_interval generate_series unnest array_length cardinality ' +
     'json_build_object jsonb_build_object json_build_array jsonb_build_array to_json to_jsonb ' +
     'jsonb_array_length jsonb_typeof jsonb_extract_path_text pg_size_pretty ' +
-    'pg_total_relation_size pg_relation_size pg_database_size pg_column_size'
+    'pg_total_relation_size pg_relation_size pg_database_size pg_column_size ' +
+    // session and recovery state
+    'current_setting pg_is_in_recovery'
   ).split(' '),
 );
 // The whole identifier is checked, schema included: `app.lower(` is an application function that
@@ -81,14 +83,17 @@ const TAKES_BRANCH = new Set([
 
 /**
  * null to allow, or the reason to deny. `protectedIds` maps a branch or endpoint id to a label.
- * With `readOnlyRole`, run_sql on a protected branch must also run as that role: the text checks
- * below are strict, but only a role that cannot write makes a read read-only in the database.
+ * `readOnlyCompute` maps a protected branch id to a read-only compute (a read replica) on it.
+ * run_sql on a mapped branch must name that branch and run on that compute: the text checks below
+ * are strict, but only a compute that cannot write makes a read read-only in the database. (A
+ * read-only role cannot do this on Neon: roles made through its API or MCP inherit
+ * pg_write_all_data from neon_superuser.)
  */
 export function neonDecision(
   tool,
   args = {},
   protectedIds = {},
-  { readOnlyRole } = {},
+  { readOnlyCompute = {} } = {},
 ) {
   if (ALWAYS_BLOCKED.has(tool))
     return `${tool} can move or replace a live branch.`;
@@ -108,7 +113,13 @@ export function neonDecision(
       target = typeof label === 'string' && label ? label : id;
   const takesBranch =
     'branch_id' in args || tool.startsWith('run_sql') || TAKES_BRANCH.has(tool);
-  if (!target && takesBranch && !args.branch_id && !args.endpoint_id)
+  // run_sql with no branch_id runs on the default branch whatever compute or endpoint it names.
+  if (
+    !target &&
+    takesBranch &&
+    !args.branch_id &&
+    (tool.startsWith('run_sql') || !args.endpoint_id)
+  )
     target = 'production (no branch named, so the default branch)';
   if (!target && tool === 'create_branch' && !args.parent_id)
     target = 'production (no parent named, so the default branch)';
@@ -122,8 +133,18 @@ export function neonDecision(
       ? `EXPLAIN ANALYZE executes the statement on ${target}.`
       : null;
   if (tool === 'run_sql') {
-    if (readOnlyRole && args.role_name !== readOnlyRole)
-      return `run_sql on ${target} must run as the read-only role: pass role_name "${readOnlyRole}".`;
+    const computes = Object.entries(readOnlyCompute);
+    // Once any compute is mapped, every protected run_sql must name a mapped branch by its id and
+    // run on that branch's compute. A branch named some other way (`main`, an alias, no branch at
+    // all) cannot be matched to its compute, so it is denied rather than left to the text checks.
+    if (computes.length) {
+      const branch = String(args.branch_id ?? '').toLowerCase();
+      const compute = computes.find(([b]) => b.toLowerCase() === branch)?.[1];
+      if (!compute)
+        return `run_sql on ${target} must name a branch_id that has a read-only compute in fwd.json (neon.readOnlyCompute).`;
+      if (args.compute_id !== compute)
+        return `run_sql on ${target} must run on its read-only compute: pass compute_id "${compute}".`;
+    }
     const raw = String(args.sql ?? '');
     // Fail closed on syntax this guard does not parse: a quoted identifier (`"setval"(…)` slips the
     // function list), a dollar-quoted body (`$$--$$` reads as a comment and hides what follows), a

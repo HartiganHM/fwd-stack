@@ -35,21 +35,21 @@ test('no fwd.json leaves an unprotected branch free', () => {
   assert.equal(run(undefined, call), '');
 });
 
-test('the hook passes the configured read-only role to the guard', () => {
+test('the hook passes the configured read-only computes to the guard', () => {
   const cfg = JSON.stringify({
     neon: {
       protected: { 'br-prod': 'production' },
-      readOnlyRole: 'agent_reader',
+      readOnlyCompute: { 'br-prod': 'ep-ro' },
     },
   });
-  const read = (role_name) => ({
+  const read = (compute_id) => ({
     tool_name: 'mcp__neon__run_sql',
     tool_input: {
       branch_id: 'br-prod',
       sql: 'select 1',
-      ...(role_name && { role_name }),
+      ...(compute_id && { compute_id }),
     },
   });
-  assert.match(run(cfg, read()), /agent_reader/);
-  assert.equal(run(cfg, read('agent_reader')), '');
+  assert.match(run(cfg, read()), /ep-ro/);
+  assert.equal(run(cfg, read('ep-ro')), '');
 });
