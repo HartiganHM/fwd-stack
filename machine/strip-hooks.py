@@ -3,10 +3,12 @@
 import json
 import sys
 
+# Matched without the config folder's name, which CLAUDE_CONFIG_DIR can change. The plugin's own
+# hooks never appear in settings.json, so nothing of the plugin's can match.
 PATTERNS = (
-    "/.claude/skills/pr-review/gate-hook.sh",
-    "/.claude/hooks/neon-prod-guard.mjs",
-    "/.claude/hooks/autonomous-guard.mjs",
+    "skills/pr-review/gate-hook.sh",
+    "hooks/neon-prod-guard.mjs",
+    "hooks/autonomous-guard.mjs",
 )
 
 path = sys.argv[1]

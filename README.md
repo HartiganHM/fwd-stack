@@ -102,12 +102,13 @@ State the skills keep, such as the pre-open pass ledger, lives in the plugin's d
 ### Setting up a machine
 
 `machine/switch.sh` installs the plugin and makes the machine consistent. It works on a fresh
-machine, and on one that ran these skills from `~/.claude/skills`:
+machine, on one that ran these skills from `~/.claude/skills`, and on one already switched (it
+updates the plugin). Backups are kept in `~/.claude/backups/fwd-switchover-<time>/`:
 
 ```sh
 machine/switch.sh --dry-run   # print every step, change nothing
 machine/switch.sh             # back up, install, verify; rolls back on any failed check
-machine/rollback.sh           # restore the last backup by hand
+machine/rollback.sh [backup]  # undo the last run, or the run whose backup folder you name
 ```
 
 It does five things:
