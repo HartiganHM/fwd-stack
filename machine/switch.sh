@@ -47,10 +47,20 @@ echo "== fwd switchover ($([ $DRY -eq 1 ] && echo DRY RUN || echo APPLY)), backu
 # Snapshot settings.json before the first `claude` command: the CLI rewrites it on any run
 # (normalising keys), so a copy taken later would not be what the user had.
 PRE_SETTINGS=""
+SETTINGS_EXISTED=0
 if [ -f "$CFG/settings.json" ]; then
+  SETTINGS_EXISTED=1
   PRE_SETTINGS=$(mktemp)
   cp -p "$CFG/settings.json" "$PRE_SETTINGS"
 fi
+# Until the backup is complete, any exit (a failed precondition, a dry run) puts settings.json back
+# as it was: the user's bytes, or no file at all.
+COMMITTED=0
+put_settings_back() {
+  [ $COMMITTED -eq 1 ] && return
+  if [ -n "$PRE_SETTINGS" ]; then cp -p "$PRE_SETTINGS" "$CFG/settings.json"; else rm -f "$CFG/settings.json"; fi
+}
+trap put_settings_back EXIT
 
 # 0. Preconditions, checked before anything changes.
 if [ -e "$LINK" ] && [ ! -L "$LINK" ]; then
@@ -94,8 +104,10 @@ fi
 if [ $DRY -eq 0 ]; then
   # Written last: rollback.sh refuses a backup without it, so an interrupted backup is never used.
   LEDGER_EXISTED=$([ -f "$DATA/precheck-ledger.json" ] && echo 1 || echo 0)
-  printf 'WAS_INSTALLED=%s\nWAS_LINK=%q\nCLAUDE_MD=%q\nPREV_PATH=%q\nLEDGER_EXISTED=%s\n' \
-    "$WAS_INSTALLED" "$WAS_LINK" "$CLAUDE_MD" "$PREV_PATH" "$LEDGER_EXISTED" >"$BACKUP/state"
+  printf 'WAS_INSTALLED=%s\nWAS_LINK=%q\nCLAUDE_MD=%q\nPREV_PATH=%q\nLEDGER_EXISTED=%s\nSETTINGS_EXISTED=%s\n' \
+    "$WAS_INSTALLED" "$WAS_LINK" "$CLAUDE_MD" "$PREV_PATH" "$LEDGER_EXISTED" "$SETTINGS_EXISTED" >"$BACKUP/state"
+  # From here the backup holds the original, and rollback (not the EXIT trap) restores it.
+  COMMITTED=1
   echo "$BACKUP" >"$CFG/backups/fwd-switchover-last"
   # From here, any failure rolls back to this backup.
   trap 'echo "!! step failed: rolling back from $BACKUP"; "$HERE/rollback.sh" "$BACKUP"; exit 1' ERR
@@ -157,8 +169,7 @@ for OLD in '~/.claude' "$CFG"; do
 done
 
 if [ $DRY -eq 1 ]; then
-  # The `claude` commands above rewrite settings.json on any run; put the user's bytes back.
-  [ -n "$PRE_SETTINGS" ] && cp -p "$PRE_SETTINGS" "$CFG/settings.json"
+  # The EXIT trap puts settings.json back: the `claude` commands above rewrite it on any run.
   echo "== dry run complete: nothing changed"
   exit 0
 fi
