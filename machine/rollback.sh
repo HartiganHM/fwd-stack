@@ -39,7 +39,14 @@ for d in "$BACKUP"/skills/*; do
   cp -Rp "$d" "$CFG/skills/"
 done
 # A ledger already at the legacy path (from an earlier, failed rollback) holds the newest entries.
-[ -n "$LIVE_COPY" ] && { mkdir -p "$(dirname "$LEGACY")"; [ -f "$LEGACY" ] && merge_ledgers "$LEGACY" "$LIVE_COPY" || cp -p "$LIVE_COPY" "$LEGACY"; }
+if [ -n "$LIVE_COPY" ]; then
+  mkdir -p "$(dirname "$LEGACY")"
+  if [ -f "$LEGACY" ]; then
+    merge_ledgers "$LEGACY" "$LIVE_COPY" || { echo "!! could not merge the ledger; its entries are safe in $LIVE_COPY. Stopping."; exit 1; }
+  else
+    cp -p "$LIVE_COPY" "$LEGACY"
+  fi
+fi
 [ -d "$BACKUP/hooks" ] && { mkdir -p "$CFG/hooks"; cp -Rp "$BACKUP/hooks/." "$CFG/hooks/"; }
 [ -d "$BACKUP/lib" ] && { mkdir -p "$CFG/lib"; cp -Rp "$BACKUP/lib/." "$CFG/lib/"; }
 
@@ -48,7 +55,12 @@ done
 if [ "$WAS_INSTALLED" != 1 ] && [ -f "$LEDGER" ]; then
   cp -p "$LEDGER" "$BACKUP/ledger-recovery-data-$NOW.json"
   mkdir -p "$(dirname "$LEGACY")"
-  if [ -f "$LEGACY" ]; then merge_ledgers "$LEGACY" "$LEDGER"; else cp -p "$LEDGER" "$LEGACY"; fi
+  if [ -f "$LEGACY" ]; then
+    # Stops before the uninstall that would delete the data ledger; its copy is in the backup folder.
+    merge_ledgers "$LEGACY" "$LEDGER" || { echo "!! could not merge the data ledger; it is kept, and copied to $BACKUP. Not uninstalling."; exit 1; }
+  else
+    cp -p "$LEDGER" "$LEGACY"
+  fi
 fi
 
 # The plugin and the link go back to how they were: kept if they were there before this run.
@@ -61,6 +73,9 @@ if [ "$WAS_INSTALLED" != 1 ]; then
     echo "!! rollback restored your files, but could not confirm fwd@fwd-stack is uninstalled. Check 'claude plugin list' and remove it by hand."
     exit 1
   fi
+  # `plugin uninstall` rewrites settings.json (and normalises other keys as it does), so the
+  # backup's copy is written again last, byte for byte.
+  [ -f "$BACKUP/settings.json" ] && cp -p "$BACKUP/settings.json" "$CFG/settings.json"
   echo "== rolled back; the plugin is uninstalled (it was not installed before)."
 else
   # Put the previous install back exactly: its cached copy and the install record that points at it.

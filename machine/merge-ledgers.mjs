@@ -4,15 +4,22 @@
 // once written (repo, branch, its creation time, and PR for an unrun row, which is written with it);
 // scoring edits a row in place and adds its PR, so the PR is not part of a scored row's identity.
 // Rows are reconciled by identity, and a later file's version replaces an earlier one: a row scored
-// in the newer ledger is kept once, scored, never twice. Unreadable files contribute nothing.
-import { readFileSync, writeFileSync } from 'node:fs';
+// in the newer ledger is kept once, scored, never twice. A missing file contributes nothing; a file
+// that exists but cannot be read or parsed stops the merge before anything is written (exit 1).
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 
 const [into, ...from] = process.argv.slice(2);
 const read = (p) => {
+  if (!existsSync(p)) return null;
   try {
-    return JSON.parse(readFileSync(p, 'utf8'));
-  } catch {
-    return null;
+    const d = JSON.parse(readFileSync(p, 'utf8'));
+    if (!Array.isArray(d?.entries)) throw new Error('no entries array');
+    return d;
+  } catch (e) {
+    console.error(
+      `merge-ledgers: ${p} is not a readable ledger (${e.message}); nothing written.`,
+    );
+    process.exit(1);
   }
 };
 const id = (e) =>

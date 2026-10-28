@@ -44,11 +44,27 @@ installed_path() {
 
 echo "== fwd switchover ($([ $DRY -eq 1 ] && echo DRY RUN || echo APPLY)), backup: $BACKUP"
 
+# Snapshot settings.json before the first `claude` command: the CLI rewrites it on any run
+# (normalising keys), so a copy taken later would not be what the user had.
+PRE_SETTINGS=""
+if [ -f "$CFG/settings.json" ]; then
+  PRE_SETTINGS=$(mktemp)
+  cp -p "$CFG/settings.json" "$PRE_SETTINGS"
+fi
+
 # 0. Preconditions, checked before anything changes.
 if [ -e "$LINK" ] && [ ! -L "$LINK" ]; then
   echo "$LINK exists and is not a symlink; move it aside first. Nothing changed."
   exit 1
 fi
+# Every existing ledger must parse before anything changes: a merge must never treat a malformed one
+# as empty and replace it.
+for L in "$CFG/skills/pr-review/precheck-ledger.json" "$DATA/precheck-ledger.json"; do
+  if [ -f "$L" ] && ! node -e 'const d=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(!Array.isArray(d?.entries))process.exit(1)' "$L" 2>/dev/null; then
+    echo "$L is not a readable ledger; fix or move it first. Nothing changed."
+    exit 1
+  fi
+done
 if ! PREV_PATH=$(installed_path); then
   echo "could not read 'claude plugin list --json'; not changing anything without knowing what is installed."
   exit 1
@@ -56,9 +72,7 @@ fi
 
 # 1. Back up everything this touches, and record what was there before, so a rollback restores it.
 run "mkdir -p '$BACKUP/skills'"
-for f in settings.json; do
-  [ -f "$CFG/$f" ] && run "cp -p '$CFG/$f' '$BACKUP/$f'"
-done
+[ -n "$PRE_SETTINGS" ] && run "cp -p '$PRE_SETTINGS' '$BACKUP/settings.json'"
 [ -f "$CLAUDE_MD" ] && run "cp -p '$CLAUDE_MD' '$BACKUP/CLAUDE.md'"
 for s in "${FWD_SKILLS[@]}"; do
   # -L too: a skill that is a symlink (dangling or not) is still a copy to back up and retire.
