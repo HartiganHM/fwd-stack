@@ -383,6 +383,8 @@ export function unaccountedMerges(cmd) {
 // (a REST path, a GH_REPO value on a wrapper, a repeated assignment), each a value the hook
 // cannot see. So a command line that mentions a gated action at all, and contains an expansion
 // (`$`, a backtick) or sets GH_REPO more than once, is unreadable as a whole.
+// The GraphQL `requestReviews` mutation names a PR by node id, never a number, so the gate can
+// never attribute it: it is always unreadable, and the hook denies it.
 export function mentionsGatedAction(cmd) {
   const plain = cmd.replace(/\\\n/g, ' ').replace(/['"\\]/g, ' ');
   return (
@@ -390,7 +392,7 @@ export function mentionsGatedAction(cmd) {
       plain,
     ) ||
     /pulls\/[^/\s]+\/merge\b/.test(plain) ||
-    /requested_reviewers|request-copilot-review/.test(plain)
+    /requested_reviewers|request-copilot-review|requestReviews/.test(plain)
   );
 }
 export function unreadableLine(cmd) {
@@ -400,7 +402,8 @@ export function unreadableLine(cmd) {
   if (!mentionsGatedAction(cmd)) return false;
   const plain = cmd.replace(/\\\n/g, ' ').replace(/['"\\]/g, ' ');
   const rerequestsMentioned = (
-    plain.match(/requested_reviewers|request-copilot-review/g) ?? []
+    plain.match(/requested_reviewers|request-copilot-review|requestReviews/g) ??
+    []
   ).length;
   const rerequestsRead = parsed.filter((g) => g.action === 'rerequest').length;
   return (

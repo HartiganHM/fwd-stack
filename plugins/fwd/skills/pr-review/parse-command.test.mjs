@@ -380,6 +380,11 @@ test('GH_REPO set through env or export, with no repository resolved, is unreada
   assert.equal(unreadableLine('GH_REPO=o/r gh pr merge 42'), false);
 });
 
+test('the GraphQL requestReviews mutation is always unreadable', () => {
+  const cmd = `gh api graphql -f query='mutation{requestReviews(input:{pullRequestId:"PR_x", botIds:["BOT_y"]}){clientMutationId}}'`;
+  assert.equal(unreadableLine(cmd), true);
+});
+
 test('anything else is not gated', () => {
   assert.deepEqual(parseCommand('git status'), []);
   assert.deepEqual(parseCommand('gh pr view 42'), []);

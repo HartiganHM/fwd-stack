@@ -21,3 +21,19 @@ export function diminishingReturns(scored, destructive) {
       !destructive,
   };
 }
+
+// The copy-only bar (§9's single verification round), judged on every round with findings from the
+// one that broke the clean streak onward. Judging only the last scored round made it unreachable
+// once a clean round landed; judging only the breaker missed a successful round that still carried
+// copy findings, a suppressed-only one.
+export function copyOnly(scored, cleanStreak, isCopy, isDeclined) {
+  const withFindings = scored
+    .slice(-1 - cleanStreak)
+    .filter((r) => r.count > 0);
+  return (
+    withFindings.length > 0 &&
+    withFindings.every((r) =>
+      r.paths.every((p) => isCopy(p) || isDeclined(p, r.n)),
+    )
+  );
+}

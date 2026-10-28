@@ -74,9 +74,9 @@ marketplace first:
 /plugin install fwd@fwd-stack
 ```
 
-| Skill       | What it does                                                                       |
-| ----------- | ---------------------------------------------------------------------------------- |
-| `pr-review` | The review gate (`pr-gate.mjs`), watcher and merge hook. The skill text lands next |
+| Skill       | What it does                                                                                        |
+| ----------- | --------------------------------------------------------------------------------------------------- |
+| `pr-review` | The Copilot review cycle and merge bar: the skill, its gate (`pr-gate.mjs`), watcher and merge hook |
 
 State the skills keep, such as the pre-open pass ledger, lives in the plugin's data folder
 (`~/.claude/plugins/data/fwd-fwd-stack/`), never in this repo.

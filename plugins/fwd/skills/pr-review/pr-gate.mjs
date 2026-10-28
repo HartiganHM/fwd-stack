@@ -37,7 +37,7 @@ import {
 import { markStaleRounds } from './stale-rounds.mjs';
 import { ciProblemsOf } from './ci-state.mjs';
 import { ledgerPath } from './ledger-path.mjs';
-import { diminishingReturns, findingsIn } from './rounds.mjs';
+import { copyOnly, diminishingReturns, findingsIn } from './rounds.mjs';
 import {
   checkoutIsPr,
   entryMatchesRepo,
@@ -381,7 +381,8 @@ const addedRuntime = (f) =>
 const destructivePaths = files
   .filter(
     (f) =>
-      /migrations?\//.test(f.filename) ||
+      // A migration directory's prose (its README) is documentation, not a migration.
+      (/migrations?\//.test(f.filename) && !isDoc(f.filename)) ||
       DESTRUCTIVE.test(addedRuntime(f) || ''),
   )
   .map((f) => f.filename);
@@ -473,8 +474,9 @@ const {
 const trailingClean = [...scored].reverse().findIndex((r) => !successful(r));
 const cleanStreak = trailingClean === -1 ? scored.length : trailingClean;
 
-// Three-round rule: one path drawing findings in three consecutive rounds.
-const lastThree = rounds.slice(-3);
+// Three-round rule: one path drawing findings in three consecutive SCORED rounds. Every §7 count
+// skips stale and errored reviews, or a discarded one hides the advance warning.
+const lastThree = scored.slice(-3);
 const repeated =
   lastThree.length === 3
     ? lastThree[0].paths.filter(
@@ -501,7 +503,7 @@ const createdHere = files
 //
 // Commit AUTHOR dates survive a rebase; committer dates do not. Only files the
 // PR creates can have been added late, so the loop is over those alone.
-const roundThreeAt = rounds[2]?.at;
+const roundThreeAt = scored[2]?.at;
 let addedLate = [];
 if (roundThreeAt) {
   for (const filename of createdHere) {
@@ -729,15 +731,15 @@ say(
 // a doc-only PR: two rounds is ~25 minutes to confirm a sentence.
 const isCopy = (p) => p.startsWith('src/lib/copy/');
 const lastScored = scored.at(-1);
-const copyOnlyRound = Boolean(
-  lastScored &&
-  lastScored.count > 0 &&
-  lastScored.paths.every((p) => isCopy(p) || isDeclined(p, lastScored.n)),
-);
+const copyOnlyRound = copyOnly(scored, cleanStreak, isCopy, isDeclined);
 const humanReviewApplies = Boolean(humanReviewer) && !destructive;
 
+// A destructive path never takes a lowered bar: clean-after-clean, whatever else applies (§8).
 const needed =
-  docOnly || copyOnlyRound || humanReviewApplies || diminishing ? 1 : 2;
+  !destructive &&
+  (docOnly || copyOnlyRound || humanReviewApplies || diminishing)
+    ? 1
+    : 2;
 const barMet = cleanStreak >= needed;
 // §7's hard stop, computed here rather than only reported below, because it is
 // a third door out of the merge bar and not merely a warning.
@@ -759,7 +761,9 @@ const barMet = cleanStreak >= needed;
 // land, waiting on a decision — was blocked from EVER requesting its first
 // review once it had been open four hours, which is the opposite of the rule's
 // intent and unrecoverable: the only move that clears it is the one it forbids.
-const hardStop = rounds.length >= 12 || (openedHours >= 4 && rounds.length > 0);
+// Counted on SCORED rounds: an errored or stale review is not a round (§4), so a run of Copilot
+// errors must not bring the hard stop forward.
+const hardStop = scored.length >= 12 || (openedHours >= 4 && scored.length > 0);
 // ---- oscillation -----------------------------------------------------------
 // The three-round rule says a surface drawing findings three rounds running is a
 // SCOPE decision. It warned, and a warning is not enough: on one PR one line
@@ -769,9 +773,11 @@ const hardStop = rounds.length >= 12 || (openedHours >= 4 && rounds.length > 0);
 // At four consecutive rounds on one path the re-request is BLOCKED until the PR
 // body records the decision in `## Settled`. Recording it is the escape, because
 // the thing that ends an oscillation is a ruling, not another patch.
+// Over SCORED rounds: a stale or errored review is discarded unread (§3, §4), so it cannot move a
+// file toward the four-round block.
 const consecutive = (path) => {
   let n = 0;
-  for (const r of [...rounds].reverse()) {
+  for (const r of [...scored].reverse()) {
     if (r.paths.includes(path)) n += 1;
     else break;
   }
@@ -785,7 +791,7 @@ const consecutive = (path) => {
 const added = new Set(
   files.filter((f) => f.status === 'added').map((f) => f.filename),
 );
-const oscillating = [...new Set(rounds.flatMap((r) => r.paths))]
+const oscillating = [...new Set(scored.flatMap((r) => r.paths))]
   // Any mention releases it, whatever round: this escape records a RULING, and
   // discounts no finding.
   .filter((p) => consecutive(p) >= 4 && !mentions(settled, p) && !added.has(p));
@@ -794,18 +800,27 @@ const oscillating = [...new Set(rounds.flatMap((r) => r.paths))]
 // fixing them and pushing IS the way out. Without this the two rules deadlock —
 // no re-request allowed, and no clean round can ever arrive.
 const softFixed = Boolean(
-  last && last.count > 0 && roundWeight(last) === 'soft' && stale,
+  last &&
+  last.count > 0 &&
+  roundWeight(last) === 'soft' &&
+  stale &&
+  !destructive,
 );
+// §7's hard stop releases the merge bar, except on a destructive path: there requesting stops,
+// but the merge waits for the user rather than shipping a delete on an unconfirmed round.
+const hardStopReleases = hardStop && !destructive;
 say(
-  barMet || softFixed || hardStop,
+  barMet || softFixed || hardStopReleases,
   'merge bar        ',
   barMet
     ? `${cleanStreak} successful round(s) trailing, need ${needed} §8`
     : softFixed
       ? `round ${last.n} was soft-only and you have pushed past it — §5 says merge without another round`
-      : hardStop
-        ? `${cleanStreak} trailing, need ${needed} — but §7's hard stop releases it: merge and report what is left`
-        : `${cleanStreak} successful round(s) trailing, need ${needed} §8`,
+      : hardStop && destructive
+        ? `${cleanStreak} trailing, need ${needed} — §7's hard stop ends requesting, but this diff is destructive, so the merge waits for the user to confirm it §8`
+        : hardStop
+          ? `${cleanStreak} trailing, need ${needed} — but §7's hard stop releases it: merge and report what is left`
+          : `${cleanStreak} successful round(s) trailing, need ${needed} §8`,
 );
 
 if (repeated.length) {
@@ -833,14 +848,14 @@ if (settled.size) {
   );
 }
 
-if (rounds.length > 3 && lastThreeOnNew) {
+if (scored.length > 3 && lastThreeOnNew) {
   warn(
     'new surface      ',
     `the last three rounds all landed on code this PR created — ask whether the fix that added it was in scope §7`,
   );
 }
 
-if (rounds.length > 3 && addedLate.length) {
+if (scored.length > 3 && addedLate.length) {
   warn(
     'late new files   ',
     `${addedLate.join(', ')} added after round 3 — that is new review surface §7`,
@@ -850,7 +865,9 @@ if (rounds.length > 3 && addedLate.length) {
 if (hardStop) {
   warn(
     'hard stop        ',
-    `round ${rounds.length}, open ${openedHours.toFixed(1)}h — stop requesting, merge and report §7`,
+    destructive && !barMet
+      ? `round ${scored.length}, open ${openedHours.toFixed(1)}h — stop requesting; this diff is destructive and its bar is unmet, so ask the user to confirm the merge §7 §8`
+      : `round ${scored.length}, open ${openedHours.toFixed(1)}h — stop requesting, merge and report §7`,
   );
 }
 
@@ -893,7 +910,7 @@ if (onHeadBranch) {
       `no cold-eyes record for ${localBranch}. §10b: before \`gh pr create\`, dispatch a general-purpose ` +
         `subagent with ${join(here, 'precheck-prompt.md')}, then ` +
         `\`node ${quote(join(here, 'precheck.mjs'))} record <file|->\`. ` +
-        `Pre-authorized in AGENTS.md — run it on EVERY PR while the trial is open, not the uncertain ones`,
+        `Run it on EVERY PR while the trial is open, not the uncertain ones (it needs the subagent grant a project gives in AGENTS.md or .claude/fwd/pr-review.md; without one, ask once)`,
     );
   } else {
     say(true, 'pre-open pass    ', 'recorded §10b');
@@ -965,7 +982,12 @@ if (action === 'merge') {
       'your local branch is ahead of the PR head — you would be merging without your last commits.',
     );
   }
-  if (!barMet && !softFixed && !hardStop) {
+  if (hardStop && destructive && !barMet) {
+    blocks.push(
+      'hard stop on a destructive path: requesting has ended, but this diff deletes or overwrites ' +
+        'user data, so the merge waits for the user to confirm it (§8).',
+    );
+  } else if (!barMet && !softFixed && !hardStop) {
     blocks.push(
       `bar not met: ${cleanStreak} clean round(s), need ${needed}. Last SCORED round ` +
         `(${lastScored ? `#${lastScored.n}` : 'none'}) landed on ` +
@@ -988,7 +1010,10 @@ if (action === 'rerequest') {
   }
   if (hardStop) {
     blocks.push(
-      `round ${rounds.length}, open ${openedHours.toFixed(1)}h — §7's hard stop. There is no round ${rounds.length + 1}: fix what is Crit/High/Med in the product tree, merge, and report the rest.`,
+      `round ${scored.length}, open ${openedHours.toFixed(1)}h — §7's hard stop. There is no round ${scored.length + 1}: fix what is Crit/High/Med in the product tree, ` +
+        (destructive && !barMet
+          ? 'then ask the user to confirm the merge: this diff is destructive and its bar is unmet (§8).'
+          : 'merge, and report the rest.'),
     );
   }
   if (barMet) {
@@ -1012,7 +1037,16 @@ if (action === 'rerequest') {
   // so when the merge is blocked for want of a clean round, the request is the
   // legal move rather than the forbidden one.
   const mergeBlocked =
-    !barMet && !softFixed && !hardStop && oscillating.length === 0;
+    !barMet && !softFixed && !hardStopReleases && oscillating.length === 0;
+  // §7: four consecutive rounds on one existing surface is a scope decision, and another round is
+  // the one move that cannot make it. Record the ruling in `## Settled` to release this.
+  if (oscillating.length > 0) {
+    blocks.push(
+      `${oscillating.join(', ')} drew findings in ${consecutive(oscillating[0])} consecutive rounds. ` +
+        "§7: make the scope decision and record it in the PR body's `## Settled` (naming the file); " +
+        'another round will not settle it.',
+    );
+  }
   if (
     last &&
     !stale &&
@@ -1048,10 +1082,23 @@ if (blocks.length) {
   // it by trying both.
   if (action) {
     const otherAllowed =
-      action === 'merge'
+      oscillating.length === 0 &&
+      (action === 'merge'
         ? !hardStop && !barMet
-        : barMet || softFixed || hardStop;
-    if (!otherAllowed) {
+        : barMet || softFixed || hardStopReleases);
+    if (!otherAllowed && hardStop && destructive && !barMet) {
+      console.log(
+        "NOTE: both actions are blocked on purpose. §7's hard stop has ended requesting, and this " +
+          'diff is destructive, so its bar is not lowered. The exit is the user confirming the merge.',
+      );
+      console.log('');
+    } else if (!otherAllowed && oscillating.length > 0) {
+      console.log(
+        "NOTE: both actions are blocked by §7's four-round rule. The exit is a scope ruling in the " +
+          "PR body's `## Settled` naming the file, not another round.",
+      );
+      console.log('');
+    } else if (!otherAllowed) {
       console.log(
         'NOTE: the other action is blocked too. That is a gate contradiction, not a rule — ' +
           "§8's diminishing-returns clause is the intended exit: merge on one clean round " +
