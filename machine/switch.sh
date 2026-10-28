@@ -46,11 +46,27 @@ echo "== fwd switchover ($([ $DRY -eq 1 ] && echo DRY RUN || echo APPLY)), backu
 
 # Snapshot settings.json before the first `claude` command: the CLI rewrites it on any run
 # (normalising keys), so a copy taken later would not be what the user had.
+# A settings.json that exists but is not a readable regular file (a dangling or odd symlink) is the
+# user's to sort out first: the cleanup below would otherwise take it for absent and remove it.
+if { [ -e "$CFG/settings.json" ] || [ -L "$CFG/settings.json" ]; } && [ ! -f "$CFG/settings.json" ]; then
+  echo "$CFG/settings.json is not a regular file (a dangling symlink?); fix it first. Nothing changed."
+  exit 1
+fi
 PRE_SETTINGS=""
+SETTINGS_EXISTED=0
 if [ -f "$CFG/settings.json" ]; then
+  SETTINGS_EXISTED=1
   PRE_SETTINGS=$(mktemp)
   cp -p "$CFG/settings.json" "$PRE_SETTINGS"
 fi
+# Until the backup is complete, any exit (a failed precondition, a dry run) puts settings.json back
+# as it was: the user's bytes, or no file at all.
+COMMITTED=0
+put_settings_back() {
+  [ $COMMITTED -eq 1 ] && return
+  if [ -n "$PRE_SETTINGS" ]; then cp -p "$PRE_SETTINGS" "$CFG/settings.json"; else rm -f "$CFG/settings.json"; fi
+}
+trap put_settings_back EXIT
 
 # 0. Preconditions, checked before anything changes.
 if [ -e "$LINK" ] && [ ! -L "$LINK" ]; then
@@ -94,13 +110,16 @@ fi
 if [ $DRY -eq 0 ]; then
   # Written last: rollback.sh refuses a backup without it, so an interrupted backup is never used.
   LEDGER_EXISTED=$([ -f "$DATA/precheck-ledger.json" ] && echo 1 || echo 0)
-  printf 'WAS_INSTALLED=%s\nWAS_LINK=%q\nCLAUDE_MD=%q\nPREV_PATH=%q\nLEDGER_EXISTED=%s\n' \
-    "$WAS_INSTALLED" "$WAS_LINK" "$CLAUDE_MD" "$PREV_PATH" "$LEDGER_EXISTED" >"$BACKUP/state"
+  printf 'WAS_INSTALLED=%s\nWAS_LINK=%q\nCLAUDE_MD=%q\nPREV_PATH=%q\nLEDGER_EXISTED=%s\nSETTINGS_EXISTED=%s\n' \
+    "$WAS_INSTALLED" "$WAS_LINK" "$CLAUDE_MD" "$PREV_PATH" "$LEDGER_EXISTED" "$SETTINGS_EXISTED" >"$BACKUP/state"
   echo "$BACKUP" >"$CFG/backups/fwd-switchover-last"
   # From here, any failure rolls back to this backup.
   trap 'echo "!! step failed: rolling back from $BACKUP"; "$HERE/rollback.sh" "$BACKUP"; exit 1' ERR
   # An interruption (Ctrl-C, a closed terminal) rolls back too, rather than leaving half a switch.
   trap 'trap - ERR INT TERM HUP; echo "!! interrupted: rolling back from $BACKUP"; "$HERE/rollback.sh" "$BACKUP"; exit 130' INT TERM HUP
+  # Only now, with the backup complete and every rollback trap armed, does rollback (not the EXIT
+  # trap) take over restoring settings.json.
+  COMMITTED=1
 fi
 
 # 2. Install the plugin from its GitHub marketplace, or bring an existing install up to date.
@@ -114,6 +133,12 @@ if [ "$WAS_INSTALLED" = 1 ]; then
 else
   run "claude plugin install fwd@fwd-stack --scope user"
 fi
+# Enabled is a setting, not part of the install: a machine that disabled it, or lost settings.json,
+# would otherwise end with the plugin installed and silent.
+run "claude plugin enable fwd@fwd-stack --scope user >/dev/null 2>&1 || true"
+# Confirmed for fwd@fwd-stack itself before anything is retired; a failure rolls back here.
+[ $DRY -eq 1 ] || claude plugin list --json 2>/dev/null |
+  node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.exit(JSON.parse(s).some(x=>x.id==="fwd@fwd-stack"&&x.enabled)?0:1))'
 
 # 3. Carry state into the plugin's data folder: the pre-open pass ledger.
 run "mkdir -p '$DATA'"
@@ -157,8 +182,7 @@ for OLD in '~/.claude' "$CFG"; do
 done
 
 if [ $DRY -eq 1 ]; then
-  # The `claude` commands above rewrite settings.json on any run; put the user's bytes back.
-  [ -n "$PRE_SETTINGS" ] && cp -p "$PRE_SETTINGS" "$CFG/settings.json"
+  # The EXIT trap puts settings.json back: the `claude` commands above rewrite it on any run.
   echo "== dry run complete: nothing changed"
   exit 0
 fi

@@ -11,8 +11,20 @@ BACKUP="${1:-$(cat "$CFG/backups/fwd-switchover-last" 2>/dev/null || true)}"
 [ -f "$BACKUP/state" ] || { echo "$BACKUP has no state file (an interrupted backup); refusing to use it. Nothing changed."; exit 1; }
 echo "== rolling back from $BACKUP"
 PREV_PATH=""
+SETTINGS_EXISTED=1
 # shellcheck disable=SC1091
 . "$BACKUP/state"
+
+# Runs on every exit, early ones included (an EXIT trap). `claude` commands rewrite settings.json,
+# so the backup's copy is written again; on a machine that had none, the one the CLI created goes.
+restore_settings() {
+  if [ -f "$BACKUP/settings.json" ]; then
+    cp -p "$BACKUP/settings.json" "$CFG/settings.json"
+  elif [ "$SETTINGS_EXISTED" = 0 ]; then
+    rm -f "$CFG/settings.json"
+  fi
+}
+trap restore_settings EXIT
 
 LEGACY="$CFG/skills/pr-review/precheck-ledger.json"
 LEDGER="$CFG/plugins/data/fwd-fwd-stack/precheck-ledger.json"
@@ -73,9 +85,6 @@ if [ "$WAS_INSTALLED" != 1 ]; then
     echo "!! rollback restored your files, but could not confirm fwd@fwd-stack is uninstalled. Check 'claude plugin list' and remove it by hand."
     exit 1
   fi
-  # `plugin uninstall` rewrites settings.json (and normalises other keys as it does), so the
-  # backup's copy is written again last, byte for byte.
-  [ -f "$BACKUP/settings.json" ] && cp -p "$BACKUP/settings.json" "$CFG/settings.json"
   echo "== rolled back; the plugin is uninstalled (it was not installed before)."
 else
   # Put the previous install back exactly: its cached copy and the install record that points at it.
