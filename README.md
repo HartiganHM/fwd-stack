@@ -99,6 +99,31 @@ example `uiSweep`, `ownApp`) live in `.claude/fwd.json`.
 State the skills keep, such as the pre-open pass ledger, lives in the plugin's data folder
 (`~/.claude/plugins/data/fwd-fwd-stack/`), never in this repo.
 
+### Setting up a machine
+
+`machine/switch.sh` installs the plugin and makes the machine consistent. It works on a fresh
+machine, and on one that ran these skills from `~/.claude/skills`:
+
+```sh
+machine/switch.sh --dry-run   # print every step, change nothing
+machine/switch.sh             # back up, install, verify; rolls back on any failed check
+machine/rollback.sh           # restore the last backup by hand
+```
+
+It does five things:
+
+1. Installs `fwd@fwd-stack`.
+2. Retires user-scope copies of the plugin's skills and hooks.
+3. Carries the pre-open ledger into the data folder.
+4. Links `~/.claude/fwd` to the plugin, so commands and docs outside a hook have a stable path,
+   such as `node ~/.claude/fwd/skills/pr-review/pr-gate.mjs <pr>` or
+   `node ~/.claude/fwd/hooks/autonomous-guard.mjs arm …`.
+5. Points `~/.claude/CLAUDE.md` at that path.
+
+`machine/verify.sh` checks that the guards answer as they should: the Neon guard, the merge
+gate and the autonomous-run guard. Run the switch when no session is mid-review or mid-merge,
+then restart sessions so they load the plugin's hooks.
+
 ## Working on the kit
 
 ```sh

@@ -1,0 +1,28 @@
+#!/usr/bin/env python3
+"""Remove the user-scope hook entries that the fwd plugin now provides, leaving every other hook alone."""
+import json
+import sys
+
+PATTERNS = (
+    "/.claude/skills/pr-review/gate-hook.sh",
+    "/.claude/hooks/neon-prod-guard.mjs",
+    "/.claude/hooks/autonomous-guard.mjs",
+)
+
+path = sys.argv[1]
+settings = json.load(open(path))
+removed = 0
+for event, entries in list(settings.get("hooks", {}).items()):
+    kept_entries = []
+    for entry in entries:
+        hooks = [h for h in entry.get("hooks", []) if not any(p in h.get("command", "") for p in PATTERNS)]
+        removed += len(entry.get("hooks", [])) - len(hooks)
+        if hooks:
+            kept_entries.append({**entry, "hooks": hooks})
+    if kept_entries:
+        settings["hooks"][event] = kept_entries
+    else:
+        del settings["hooks"][event]
+json.dump(settings, open(path, "w"), indent=2)
+open(path, "a").write("\n")
+print(f"removed {removed} hook command(s) now provided by the fwd plugin")
