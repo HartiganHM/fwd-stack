@@ -156,7 +156,12 @@ for OLD in '~/.claude' "$CFG"; do
   [ -f "$CLAUDE_MD" ] && run "perl -pi -e 's#\\Q$OLD\\E/skills/pr-review/#$SHOWN/fwd/skills/pr-review/#g; s#\\Q$OLD\\E/hooks/autonomous-guard\\.mjs#$SHOWN/fwd/hooks/autonomous-guard.mjs#g' '$CLAUDE_MD'"
 done
 
-[ $DRY -eq 1 ] && { echo "== dry run complete: nothing changed"; exit 0; }
+if [ $DRY -eq 1 ]; then
+  # The `claude` commands above rewrite settings.json on any run; put the user's bytes back.
+  [ -n "$PRE_SETTINGS" ] && cp -p "$PRE_SETTINGS" "$CFG/settings.json"
+  echo "== dry run complete: nothing changed"
+  exit 0
+fi
 
 # 8. Verify; roll back on any failure. (An interruption here still rolls back.)
 trap - ERR
