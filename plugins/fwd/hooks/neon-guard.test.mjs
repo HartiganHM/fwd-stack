@@ -277,20 +277,27 @@ test('a mapped protected branch must be read through its read-only compute', () 
     ),
     /one read statement/,
   );
-  // With computes mapped, a call naming no branch must name one.
+  // With computes mapped, a protected run_sql that cannot be matched to one is denied: no branch,
+  // a branch named by an alias, a call naming only an endpoint, or an unmapped protected branch.
+  for (const args of [
+    { sql: 'select 1' },
+    { branch_id: 'main', sql: 'select 1' },
+    { endpoint_id: 'ep-other', sql: 'select 1' },
+    { compute_id: 'ep-ro', sql: 'select 1' },
+  ])
+    assert.match(
+      neonDecision('run_sql', args, { ...prod, main: 'production' }, opts),
+      /read-only compute/,
+      JSON.stringify(args),
+    );
   assert.match(
-    neonDecision('run_sql', { sql: 'select 1' }, prod, opts),
-    /must name its branch_id/,
-  );
-  // A protected branch with no mapped compute keeps the text checks alone.
-  assert.equal(
     neonDecision(
       'run_sql',
       { branch_id: 'br-stage', sql: 'select 1' },
       { 'br-stage': 'staging' },
       opts,
     ),
-    null,
+    /read-only compute/,
   );
   // An unprotected branch is not affected.
   assert.equal(

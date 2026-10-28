@@ -113,7 +113,13 @@ export function neonDecision(
       target = typeof label === 'string' && label ? label : id;
   const takesBranch =
     'branch_id' in args || tool.startsWith('run_sql') || TAKES_BRANCH.has(tool);
-  if (!target && takesBranch && !args.branch_id && !args.endpoint_id)
+  // run_sql with no branch_id runs on the default branch whatever compute or endpoint it names.
+  if (
+    !target &&
+    takesBranch &&
+    !args.branch_id &&
+    (tool.startsWith('run_sql') || !args.endpoint_id)
+  )
     target = 'production (no branch named, so the default branch)';
   if (!target && tool === 'create_branch' && !args.parent_id)
     target = 'production (no parent named, so the default branch)';
@@ -128,13 +134,15 @@ export function neonDecision(
       : null;
   if (tool === 'run_sql') {
     const computes = Object.entries(readOnlyCompute);
+    // Once any compute is mapped, every protected run_sql must name a mapped branch by its id and
+    // run on that branch's compute. A branch named some other way (`main`, an alias, no branch at
+    // all) cannot be matched to its compute, so it is denied rather than left to the text checks.
     if (computes.length) {
       const branch = String(args.branch_id ?? '').toLowerCase();
       const compute = computes.find(([b]) => b.toLowerCase() === branch)?.[1];
-      // A call naming no branch runs on the default branch, which may be mapped: make it say so.
-      if (!args.branch_id)
-        return `run_sql on ${target} must name its branch_id, so its read-only compute can be checked.`;
-      if (compute && args.compute_id !== compute)
+      if (!compute)
+        return `run_sql on ${target} must name a branch_id that has a read-only compute in fwd.json (neon.readOnlyCompute).`;
+      if (args.compute_id !== compute)
         return `run_sql on ${target} must run on its read-only compute: pass compute_id "${compute}".`;
     }
     const raw = String(args.sql ?? '');
