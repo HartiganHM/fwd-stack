@@ -19,7 +19,8 @@ Last updated: 2026-10-28.
 
 ## In progress
 
-- **The 99 adopts the shared tsconfig and ESLint presets**: `HartiganHM/the-99#2281`. Config
+- **The 99 adopts the shared tsconfig and ESLint presets**: `HartiganHM/the-99#2281` was closed
+  unmerged on 2026-10-28 (too far behind main); redo it fresh from main in a new PR. Config
   only. It also removed 31 unused imports and variables the shared rules surfaced. The kit's
   base raises The 99's `target` from ES2017 to ES2022 and turns on `noImplicitOverride`; neither
   changes shipped output.
