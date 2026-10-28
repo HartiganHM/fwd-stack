@@ -19,23 +19,9 @@ LEDGER="$CFG/plugins/data/fwd-fwd-stack/precheck-ledger.json"
 NOW=$(date +%Y%m%d-%H%M%S)
 # Ledger entries are never lost: every ledger this rollback is about to replace or see deleted gets a
 # recovery copy in the backup folder first (they survive a failed or repeated rollback), and the
-# restored legacy ledger is the union of all of them.
-# A row is identified by what precheck.mjs never changes once written (repo, branch, its creation
-# time, and PR for an unrun row, which is written with it); scoring edits a row in place and adds
-# its PR, so the PR is not part of a scored row's identity. So rows are reconciled by identity,
-# and a later source's version (the live one) replaces an earlier one (a backup snapshot): a row
-# scored after the switch is kept once, scored, never twice.
-merge_ledgers() { # merge_ledgers <into> <newer>...
-  node -e '
-    const fs = require("fs");
-    const [into, ...from] = process.argv.slice(1);
-    const read = (p) => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; } };
-    const id = (e) => JSON.stringify([e.repo ?? null, e.branch ?? null, e.at ?? null, e.unrun ? e.pr : null]);
-    const rows = new Map();
-    for (const p of [into, ...from]) for (const e of read(p)?.entries ?? []) rows.set(id(e), e);
-    fs.writeFileSync(into, JSON.stringify({ ...(read(into) ?? read(from[0]) ?? {}), entries: [...rows.values()] }, null, 2) + "\n");
-  ' "$@"
-}
+# restored legacy ledger is the union of all of them (merge-ledgers.mjs reconciles rows by identity).
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+merge_ledgers() { node "$HERE/merge-ledgers.mjs" "$@"; }
 LIVE_COPY=""
 if [ -f "$LEGACY" ]; then
   LIVE_COPY="$BACKUP/ledger-recovery-legacy-$NOW.json"

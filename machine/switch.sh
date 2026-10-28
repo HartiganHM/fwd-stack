@@ -85,6 +85,8 @@ if [ $DRY -eq 0 ]; then
   echo "$BACKUP" >"$CFG/backups/fwd-switchover-last"
   # From here, any failure rolls back to this backup.
   trap 'echo "!! step failed: rolling back from $BACKUP"; "$HERE/rollback.sh" "$BACKUP"; exit 1' ERR
+  # An interruption (Ctrl-C, a closed terminal) rolls back too, rather than leaving half a switch.
+  trap 'trap - ERR INT TERM HUP; echo "!! interrupted: rolling back from $BACKUP"; "$HERE/rollback.sh" "$BACKUP"; exit 130' INT TERM HUP
 fi
 
 # 2. Install the plugin from its GitHub marketplace, or bring an existing install up to date.
@@ -101,8 +103,16 @@ fi
 
 # 3. Carry state into the plugin's data folder: the pre-open pass ledger.
 run "mkdir -p '$DATA'"
-if [ -f "$CFG/skills/pr-review/precheck-ledger.json" ] && [ ! -f "$DATA/precheck-ledger.json" ]; then
-  run "cp -p '$CFG/skills/pr-review/precheck-ledger.json' '$DATA/precheck-ledger.json'"
+if [ -f "$CFG/skills/pr-review/precheck-ledger.json" ]; then
+  if [ -f "$DATA/precheck-ledger.json" ]; then
+    # Both exist (Bash runs of the plugin's scripts already wrote the data one): merge, so no legacy
+    # row drops out of the ledger the plugin reads. The data one is newer and wins on a shared row.
+    run "cp -p '$DATA/precheck-ledger.json' '$BACKUP/ledger-data-before.json'"
+    run "cp -p '$CFG/skills/pr-review/precheck-ledger.json' '$DATA/precheck-ledger.json.legacy'"
+    run "node '$HERE/merge-ledgers.mjs' '$DATA/precheck-ledger.json.legacy' '$DATA/precheck-ledger.json' && mv '$DATA/precheck-ledger.json.legacy' '$DATA/precheck-ledger.json'"
+  else
+    run "cp -p '$CFG/skills/pr-review/precheck-ledger.json' '$DATA/precheck-ledger.json'"
+  fi
 fi
 
 # 4. Stable path to the copy Claude Code actually runs (the install cache), for commands outside hooks.
@@ -134,7 +144,7 @@ done
 
 [ $DRY -eq 1 ] && { echo "== dry run complete: nothing changed"; exit 0; }
 
-# 8. Verify; roll back on any failure.
+# 8. Verify; roll back on any failure. (An interruption here still rolls back.)
 trap - ERR
 if ! "$HERE/verify.sh"; then
   echo "!! verification failed: rolling back from $BACKUP"
