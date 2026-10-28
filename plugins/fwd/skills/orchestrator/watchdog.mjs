@@ -107,7 +107,6 @@ for (;;) {
     if (exiting) break;
     const seen = readSeen();
     const stalled = unreported(stalledPrs(prs, Date.now(), stall), seen);
-    failures = 0;
     if (stalled.length) {
       for (const p of stalled) seen[p.number] = p.updatedAt;
       mkdirSync(stateDir, { recursive: true });
@@ -117,6 +116,9 @@ for (;;) {
         stalled,
       );
     }
+    // Only a poll that got all the way through resets the count: a state write that fails every
+    // time must still reach the five-failure alarm.
+    failures = 0;
   } catch (e) {
     // A few failed reads are noise; a run of them is something the orchestrator should hear.
     if (++failures >= 5)

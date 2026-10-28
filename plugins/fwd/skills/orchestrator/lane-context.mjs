@@ -31,18 +31,21 @@ const configDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
 // every worktree of the repository is scanned too.
 const worktrees = () => {
   try {
-    return execFileSync(
-      'git',
-      ['-C', project, 'worktree', 'list', '--porcelain'],
-      {
-        encoding: 'utf8',
-        timeout: 10_000,
-        stdio: ['ignore', 'pipe', 'ignore'], // not a repository: no worktrees, and no noise
-      },
-    )
-      .split('\n')
-      .filter((l) => l.startsWith('worktree '))
-      .map((l) => l.slice('worktree '.length));
+    return (
+      execFileSync(
+        'git',
+        ['-C', project, 'worktree', 'list', '--porcelain', '-z'],
+        {
+          encoding: 'utf8',
+          timeout: 10_000,
+          stdio: ['ignore', 'pipe', 'ignore'], // not a repository: no worktrees, and no noise
+        },
+      )
+        // -z: NUL-separated and unquoted. Plain porcelain quotes a path holding non-ASCII.
+        .split('\0')
+        .filter((l) => l.startsWith('worktree '))
+        .map((l) => l.slice('worktree '.length))
+    );
   } catch {
     return [];
   }
