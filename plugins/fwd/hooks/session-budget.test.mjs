@@ -24,6 +24,15 @@ test('the lines default to 150k and rotateAt, and follow the config', () => {
     }),
     { warn: 80_000, critical: 200_000 },
   );
+  assert.deepEqual(lines({ orchestrator: { rotateAt: 100_000 } }), {
+    warn: 100_000,
+    critical: 100_000,
+  });
+  assert.match(
+    budgetMessage(120_000, lines({ orchestrator: { rotateAt: 100_000 } })),
+    /CRITICAL/,
+    'a rotation line below the default warning still speaks',
+  );
 });
 
 test('quiet below the warning line, then a warning, then critical', () => {
@@ -51,6 +60,23 @@ test('a session is told once per band crossed, never again for the same band', (
   assert.equal(crossed('s2', 1, env), true, 'sessions are tracked apart');
   assert.equal(crossed('s1', 0, env), false, 'a compacted session drops back');
   assert.equal(crossed('s1', 1, env), true, 'and is warned again as it grows');
+});
+
+test('parallel hook processes announce a band once between them', async () => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const run = promisify(execFile);
+  const env = {
+    ...process.env,
+    CLAUDE_PLUGIN_DATA: mkdtempSync(join(tmpdir(), 'budget-')),
+  };
+  const script = `import { crossed } from ${JSON.stringify(new URL('./session-budget.mjs', import.meta.url).href)}; process.stdout.write(String(crossed('race', 2)));`;
+  const outs = await Promise.all(
+    Array.from({ length: 8 }, () =>
+      run(process.execPath, ['--input-type=module', '-e', script], { env }),
+    ),
+  );
+  assert.equal(outs.filter((o) => o.stdout === 'true').length, 1);
 });
 
 test('context is the last main-session turn, read from the tail', () => {

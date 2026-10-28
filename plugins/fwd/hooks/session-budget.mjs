@@ -17,8 +17,9 @@ import {
   openSync,
   readFileSync,
   readSync,
+  readdirSync,
+  rmSync,
   statSync,
-  writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
 
@@ -30,10 +31,10 @@ import { sessionSummary } from '../skills/orchestrator/lane-core.mjs';
 const STEP = 100_000;
 
 export function lines(config = {}) {
-  return {
-    warn: config.sessionBudget?.warnTokens ?? 150_000,
-    critical: config.orchestrator?.rotateAt ?? 300_000,
-  };
+  const critical = config.orchestrator?.rotateAt ?? 300_000;
+  // A rotation line set below the warning line still warns at it: the warning never comes later.
+  const warn = Math.min(config.sessionBudget?.warnTokens ?? 150_000, critical);
+  return { warn, critical };
 }
 
 // 0 below the warning line, 1 between the lines, then 2, 3, … for each 100k past the critical line.
@@ -70,27 +71,25 @@ export function lastContext(path) {
   }
 }
 
-// The band last announced to a session, so PostToolUse speaks once per crossing.
-const stateFile = (sessionId, env) =>
-  join(
-    pluginDataDir(env),
-    'session-budget',
-    `${sessionId.replace(/[^\w-]/g, '_')}.json`,
-  );
+// One marker file per band announced to a session. Creating it with `wx` is atomic, so parallel
+// tool calls (each its own hook process) announce a band once between them. A drop, after
+// /compact, removes the markers above it, so growing back past a line warns again.
+const stateDir = (sessionId, env) =>
+  join(pluginDataDir(env), 'session-budget', sessionId.replace(/[^\w-]/g, '_'));
 
 export function crossed(sessionId, now, env = process.env) {
-  const file = stateFile(sessionId, env);
-  let last = 0;
+  const dir = stateDir(sessionId, env);
+  mkdirSync(dir, { recursive: true });
+  for (const f of readdirSync(dir))
+    if (Number(f) > now) rmSync(join(dir, f), { force: true });
+  if (now === 0) return false;
   try {
-    last = JSON.parse(readFileSync(file, 'utf8')).band ?? 0;
-  } catch {
-    // First run for this session.
+    closeSync(openSync(join(dir, String(now)), 'wx'));
+    return true;
+  } catch (error) {
+    if (error.code === 'EEXIST') return false;
+    throw error;
   }
-  if (now === last) return false;
-  // A drop (after /compact) is recorded too, so growing back past a line warns again.
-  mkdirSync(join(pluginDataDir(env), 'session-budget'), { recursive: true });
-  writeFileSync(file, JSON.stringify({ band: now }));
-  return now > last;
 }
 
 // Run as a hook, not when a test imports it.
