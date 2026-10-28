@@ -213,7 +213,13 @@ test('only read-only builtins may be called on a protected branch', () => {
 });
 
 test('a call is checked by its whole identifier', () => {
-  for (const sql of ["select app.lower('x')", "select \u00e9lower('x')"])
+  for (const sql of [
+    "select app.lower('x')",
+    "select app. lower('x')",
+    "select app . lower('x')",
+    "select app. -- c\n lower('x')",
+    "select \u00e9lower('x')",
+  ])
     assert.match(
       neonDecision('run_sql', { branch_id: 'br-prod', sql }, prod),
       /one read statement/,

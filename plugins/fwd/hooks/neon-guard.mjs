@@ -61,8 +61,10 @@ const READ_CALLS = new Set(
 // literal is denied first, so `élower(` cannot pass as `lower(`.
 const callsOnlyReads = (sql) =>
   !/[^\p{ASCII}]/u.test(sql) &&
-  [...sql.matchAll(/([\w.]+)\s*\(/g)].every(([, name]) =>
-    READ_CALLS.has(name.toLowerCase().replace(/^pg_catalog\./, '')),
+  // `app . lower(` is `app.lower(` to PostgreSQL: close the gaps around a dot before reading names.
+  [...sql.replace(/\s*\.\s*/g, '.').matchAll(/([\w.]+)\s*\(/g)].every(
+    ([, name]) =>
+      READ_CALLS.has(name.toLowerCase().replace(/^pg_catalog\./, '')),
   );
 
 // Tools whose branch is optional and defaults to the project's default branch.
