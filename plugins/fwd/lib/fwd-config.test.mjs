@@ -80,26 +80,21 @@ test('a file that exists but is not a JSON object is reported, and the rest stil
   assert.deepEqual(loadConfig({}, '/h', () => ({})).invalid, []);
 });
 
-test('a project names a read-only role only when the machine has none', () => {
-  const machine = { neon: { readOnlyRole: 'machine_reader' } };
+test('read-only computes are a union in which the machine wins per branch', () => {
+  const machine = { neon: { readOnlyCompute: { 'br-a': 'ep-machine' } } };
   const cfg = (project) =>
     loadConfig({ CLAUDE_PROJECT_DIR: '/p' }, '/h', (path) =>
       path === '/p/.claude/fwd.json' ? project : machine,
-    ).neon.readOnlyRole;
-  // A project cannot replace the machine's role, with a writer or anything else.
-  assert.equal(
-    cfg({ neon: { readOnlyRole: 'neondb_owner' } }),
-    'machine_reader',
-  );
-  for (const cleared of [null, '', 0])
-    assert.equal(cfg({ neon: { readOnlyRole: cleared } }), 'machine_reader');
-  assert.equal(loadConfig({}, '/h', () => ({})).neon.readOnlyRole, undefined);
-  assert.equal(
-    loadConfig({ CLAUDE_PROJECT_DIR: '/p' }, '/h', (path) =>
-      path === '/p/.claude/fwd.json'
-        ? { neon: { readOnlyRole: 'app_reader' } }
-        : {},
-    ).neon.readOnlyRole,
-    'app_reader',
-  );
+    ).neon.readOnlyCompute;
+  // A project cannot repoint a machine-mapped branch, or clear it.
+  for (const ep of ['ep-writer', null, ''])
+    assert.deepEqual(cfg({ neon: { readOnlyCompute: { 'br-a': ep } } }), {
+      'br-a': 'ep-machine',
+    });
+  // A project adds its own branches.
+  assert.deepEqual(cfg({ neon: { readOnlyCompute: { 'br-b': 'ep-b' } } }), {
+    'br-a': 'ep-machine',
+    'br-b': 'ep-b',
+  });
+  assert.deepEqual(loadConfig({}, '/h', () => ({})).neon.readOnlyCompute, {});
 });

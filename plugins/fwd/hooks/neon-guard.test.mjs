@@ -255,36 +255,62 @@ test('row-locking reads are not reads', () => {
     );
 });
 
-test('with a read-only role set, run_sql on a protected branch must use it', () => {
-  const opts = { readOnlyRole: 'agent_reader' };
+test('a mapped protected branch must be read through its read-only compute', () => {
+  const opts = { readOnlyCompute: { 'br-prod': 'ep-ro' } };
   const read = { branch_id: 'br-prod', sql: 'select 1' };
+  assert.match(neonDecision('run_sql', read, prod, opts), /compute_id "ep-ro"/);
   assert.match(
-    neonDecision('run_sql', read, prod, opts),
-    /role_name "agent_reader"/,
-  );
-  assert.match(
-    neonDecision('run_sql', { ...read, role_name: 'neondb_owner' }, prod, opts),
-    /read-only role/,
+    neonDecision('run_sql', { ...read, compute_id: 'ep-prod' }, prod, opts),
+    /read-only compute/,
   );
   assert.equal(
-    neonDecision('run_sql', { ...read, role_name: 'agent_reader' }, prod, opts),
+    neonDecision('run_sql', { ...read, compute_id: 'ep-ro' }, prod, opts),
     null,
   );
-  // The role does not relax the text checks.
+  // The compute does not relax the text checks.
   assert.match(
     neonDecision(
       'run_sql',
-      { branch_id: 'br-prod', role_name: 'agent_reader', sql: 'delete from x' },
+      { branch_id: 'br-prod', compute_id: 'ep-ro', sql: 'delete from x' },
       prod,
       opts,
     ),
     /one read statement/,
+  );
+  // With computes mapped, a call naming no branch must name one.
+  assert.match(
+    neonDecision('run_sql', { sql: 'select 1' }, prod, opts),
+    /must name its branch_id/,
+  );
+  // A protected branch with no mapped compute keeps the text checks alone.
+  assert.equal(
+    neonDecision(
+      'run_sql',
+      { branch_id: 'br-stage', sql: 'select 1' },
+      { 'br-stage': 'staging' },
+      opts,
+    ),
+    null,
   );
   // An unprotected branch is not affected.
   assert.equal(
     neonDecision(
       'run_sql',
       { branch_id: 'br-dev', sql: 'delete from x' },
+      prod,
+      opts,
+    ),
+    null,
+  );
+  // Recovery and settings reads are allowed.
+  assert.equal(
+    neonDecision(
+      'run_sql',
+      {
+        ...read,
+        compute_id: 'ep-ro',
+        sql: "select pg_is_in_recovery(), current_setting('transaction_read_only')",
+      },
       prod,
       opts,
     ),

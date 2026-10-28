@@ -53,7 +53,9 @@ const READ_CALLS = new Set(
     'age interval make_interval generate_series unnest array_length cardinality ' +
     'json_build_object jsonb_build_object json_build_array jsonb_build_array to_json to_jsonb ' +
     'jsonb_array_length jsonb_typeof jsonb_extract_path_text pg_size_pretty ' +
-    'pg_total_relation_size pg_relation_size pg_database_size pg_column_size'
+    'pg_total_relation_size pg_relation_size pg_database_size pg_column_size ' +
+    // session and recovery state
+    'current_setting pg_is_in_recovery'
   ).split(' '),
 );
 // The whole identifier is checked, schema included: `app.lower(` is an application function that
@@ -81,14 +83,17 @@ const TAKES_BRANCH = new Set([
 
 /**
  * null to allow, or the reason to deny. `protectedIds` maps a branch or endpoint id to a label.
- * With `readOnlyRole`, run_sql on a protected branch must also run as that role: the text checks
- * below are strict, but only a role that cannot write makes a read read-only in the database.
+ * `readOnlyCompute` maps a protected branch id to a read-only compute (a read replica) on it.
+ * run_sql on a mapped branch must name that branch and run on that compute: the text checks below
+ * are strict, but only a compute that cannot write makes a read read-only in the database. (A
+ * read-only role cannot do this on Neon: roles made through its API or MCP inherit
+ * pg_write_all_data from neon_superuser.)
  */
 export function neonDecision(
   tool,
   args = {},
   protectedIds = {},
-  { readOnlyRole } = {},
+  { readOnlyCompute = {} } = {},
 ) {
   if (ALWAYS_BLOCKED.has(tool))
     return `${tool} can move or replace a live branch.`;
@@ -122,8 +127,16 @@ export function neonDecision(
       ? `EXPLAIN ANALYZE executes the statement on ${target}.`
       : null;
   if (tool === 'run_sql') {
-    if (readOnlyRole && args.role_name !== readOnlyRole)
-      return `run_sql on ${target} must run as the read-only role: pass role_name "${readOnlyRole}".`;
+    const computes = Object.entries(readOnlyCompute);
+    if (computes.length) {
+      const branch = String(args.branch_id ?? '').toLowerCase();
+      const compute = computes.find(([b]) => b.toLowerCase() === branch)?.[1];
+      // A call naming no branch runs on the default branch, which may be mapped: make it say so.
+      if (!args.branch_id)
+        return `run_sql on ${target} must name its branch_id, so its read-only compute can be checked.`;
+      if (compute && args.compute_id !== compute)
+        return `run_sql on ${target} must run on its read-only compute: pass compute_id "${compute}".`;
+    }
     const raw = String(args.sql ?? '');
     // Fail closed on syntax this guard does not parse: a quoted identifier (`"setval"(…)` slips the
     // function list), a dollar-quoted body (`$$--$$` reads as a comment and hides what follows), a

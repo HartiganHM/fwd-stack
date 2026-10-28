@@ -6,7 +6,7 @@
 //     "ownApp": true,                                   // one of the owner's own apps
 //     "neon": {
 //       "protected": { "br-…": "production" },          // read-only Neon branches/endpoints
-//       "readOnlyRole": "agent_reader"                  // run_sql there must use this role
+//       "readOnlyCompute": { "br-…": "ep-…" }           // run_sql there must use this replica
 //     },
 //     "sessionBudget": { "warn": 20, "critical": 35 }     // assistant turns
 //   }
@@ -75,14 +75,19 @@ export function loadConfig(
       ...ids(project.neon?.protected),
     },
   };
-  // The machine's role, when set, is the safety net and wins: a project file could otherwise swap
-  // it for a writer role. Neon roles belong to a branch, so a project whose branches the machine
-  // file does not cover names its own here.
-  const role = (v) => (typeof v === 'string' && v ? v : undefined);
-  const readOnlyRole =
-    role(machine.neon?.readOnlyRole) ?? role(project.neon?.readOnlyRole);
-  if (readOnlyRole) merged.neon.readOnlyRole = readOnlyRole;
-  else delete merged.neon.readOnlyRole;
+  // Read-only computes are a union like `protected`, but the machine wins per branch: a project
+  // file could otherwise point a machine-mapped branch at a read-write compute. Only nonempty
+  // string values count, so null or "" cannot clear an entry.
+  const computes = (v) =>
+    Object.fromEntries(
+      Object.entries(isObject(v) ? v : {}).filter(
+        ([, ep]) => typeof ep === 'string' && ep,
+      ),
+    );
+  merged.neon.readOnlyCompute = {
+    ...computes(project.neon?.readOnlyCompute),
+    ...computes(machine.neon?.readOnlyCompute),
+  };
   merged.invalid = invalid;
   return merged;
 }
