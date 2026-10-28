@@ -135,7 +135,10 @@ else
 fi
 # Enabled is a setting, not part of the install: a machine that disabled it, or lost settings.json,
 # would otherwise end with the plugin installed and silent.
-run "claude plugin enable fwd@fwd-stack --scope user >/dev/null 2>&1 || claude plugin list --json | grep -q '\"enabled\": true'"
+run "claude plugin enable fwd@fwd-stack --scope user >/dev/null 2>&1 || true"
+# Confirmed for fwd@fwd-stack itself before anything is retired; a failure rolls back here.
+[ $DRY -eq 1 ] || claude plugin list --json 2>/dev/null |
+  node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>process.exit(JSON.parse(s).some(x=>x.id==="fwd@fwd-stack"&&x.enabled)?0:1))'
 
 # 3. Carry state into the plugin's data folder: the pre-open pass ledger.
 run "mkdir -p '$DATA'"
