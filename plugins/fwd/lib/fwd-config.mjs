@@ -77,12 +77,13 @@ export function loadConfig(
   };
   // Read-only computes are a union like `protected`, but the machine wins per branch: a project
   // file could otherwise point a machine-mapped branch at a read-write compute. Only nonempty
-  // string values count, so null or "" cannot clear an entry.
+  // string values count, so null or "" cannot clear an entry. Branch ids are lowercased, as the
+  // guard matches them: otherwise `BR-PROD` in a project would sit beside the machine's `br-prod`.
   const computes = (v) =>
     Object.fromEntries(
-      Object.entries(isObject(v) ? v : {}).filter(
-        ([, ep]) => typeof ep === 'string' && ep,
-      ),
+      Object.entries(isObject(v) ? v : {})
+        .filter(([, ep]) => typeof ep === 'string' && ep)
+        .map(([branch, ep]) => [branch.toLowerCase(), ep]),
     );
   merged.neon.readOnlyCompute = {
     ...computes(project.neon?.readOnlyCompute),

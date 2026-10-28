@@ -87,6 +87,13 @@ test('read-only computes are a union in which the machine wins per branch', () =
       path === '/p/.claude/fwd.json' ? project : machine,
     ).neon.readOnlyCompute;
   // A project cannot repoint a machine-mapped branch, or clear it.
+  // Not by a key that differs only in case, either.
+  assert.deepEqual(
+    cfg({ neon: { readOnlyCompute: { 'BR-A': 'ep-writer' } } }),
+    {
+      'br-a': 'ep-machine',
+    },
+  );
   for (const ep of ['ep-writer', null, ''])
     assert.deepEqual(cfg({ neon: { readOnlyCompute: { 'br-a': ep } } }), {
       'br-a': 'ep-machine',
