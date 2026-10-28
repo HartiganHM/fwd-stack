@@ -74,21 +74,23 @@ marketplace first:
 /plugin install fwd@fwd-stack
 ```
 
-| Skill                | What it does                                                                                  |
-| -------------------- | --------------------------------------------------------------------------------------------- |
-| `pr-review`          | The Copilot review cycle and merge bar: the skill, its gate (`pr-gate.mjs`), watcher and hook |
-| `feature-acceptance` | Proves a UI feature landed on every route and viewport it claimed                             |
-| `design-review`      | Compares an implementation against its design handoff, property by property                   |
-| `design-status`      | A fixed-shape readout of the design pipeline's state                                          |
-| `css-layout-triage`  | Measurement-first triage for layout bugs that resist fixing                                   |
-| `complete-and-ship`  | Finishes a plan's remaining tasks unattended, then opens and reviews the PR                   |
-| `epic-run`           | Runs a multi-PR feature epic end to end with per-PR and whole-vertical gates                  |
-| `feature-run-report` | The fixed-shape report at the end of an unattended run                                        |
-| `copy-review`        | Writing and reviewing customer-facing copy against the project's voice and locked vocabulary  |
-| `infra-setup`        | Hosting, database and monitoring defaults for a new or audited app, with running cost         |
-| `backlog-audit`      | Audits, triages and prioritises the GitHub Issues backlog, and governs intake                 |
-| `ui-audit`           | Runs the project's UI sweep, triages captures for layout breakage, files on approval          |
-| `prose-pass`         | Rewrites long-form in-app prose in the project's voice, with a fact check (own apps only)     |
+| Skill                | What it does                                                                                        |
+| -------------------- | --------------------------------------------------------------------------------------------------- |
+| `pr-review`          | The Copilot review cycle and merge bar: the skill, its gate (`pr-gate.mjs`), watcher and hook       |
+| `feature-acceptance` | Proves a UI feature landed on every route and viewport it claimed                                   |
+| `design-review`      | Compares an implementation against its design handoff, property by property                         |
+| `design-status`      | A fixed-shape readout of the design pipeline's state                                                |
+| `css-layout-triage`  | Measurement-first triage for layout bugs that resist fixing                                         |
+| `complete-and-ship`  | Finishes a plan's remaining tasks unattended, then opens and reviews the PR                         |
+| `epic-run`           | Runs a multi-PR feature epic end to end with per-PR and whole-vertical gates                        |
+| `feature-run-report` | The fixed-shape report at the end of an unattended run                                              |
+| `copy-review`        | Writing and reviewing customer-facing copy against the project's voice and locked vocabulary        |
+| `infra-setup`        | Hosting, database and monitoring defaults for a new or audited app, with running cost               |
+| `backlog-audit`      | Audits, triages and prioritises the GitHub Issues backlog, and governs intake                       |
+| `ui-audit`           | Runs the project's UI sweep, triages captures for layout breakage, files on approval                |
+| `prose-pass`         | Rewrites long-form in-app prose in the project's voice, with a fact check (own apps only)           |
+| `orchestrator`       | Coordinates lane sessions: assigns work, watches stalls and context, rotates lanes, reports status  |
+| `lane`               | Works under an orchestrator: stays inside its brief, waits so the wait notifies, writes its handoff |
 
 Each skill first reads `.claude/fwd/<skill>.md` in the project, if present: the project's own
 tools and rules for that skill, which win where they conflict. Settings the skills read (for
