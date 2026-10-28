@@ -33,6 +33,39 @@
             "statusMessage": "pr-review: checking the re-request is earned"
           }
         ]
+      },
+      {
+        "matcher": "mcp__neon__.*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/neon-prod-guard.mjs",
+            "timeout": 15,
+            "statusMessage": "neon guard: checking for production writes"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/autonomous-guard.mjs",
+            "timeout": 15
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}\"/hooks/session-budget.mjs",
+            "timeout": 15
+          }
+        ]
       }
     ]
   }
