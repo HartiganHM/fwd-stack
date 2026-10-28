@@ -1,0 +1,23 @@
+// Which open PRs have gone quiet, kept pure so it is testable. A PR is quiet when nothing has
+// touched it (a push, a review, a comment) for `stallMinutes`: the sign a lane has stopped,
+// or is waiting on something that will never notify it.
+
+/**
+ * The stalled PRs not already reported. `seen` maps a PR number to the `updatedAt` it was last
+ * reported at: a PR still quiet since then has been handed to the orchestrator once, and reporting
+ * it on every re-arm would end each watch on its first poll. Any new activity reports it again.
+ */
+export function unreported(stalled, seen = {}) {
+  return stalled.filter((p) => seen[p.number] !== p.updatedAt);
+}
+
+export function stalledPrs(prs, now, stallMinutes = 30) {
+  return prs
+    .filter((p) => !p.isDraft)
+    .map((p) => ({
+      ...p,
+      quietMinutes: Math.floor((now - Date.parse(p.updatedAt)) / 60_000),
+    }))
+    .filter((p) => p.quietMinutes >= stallMinutes)
+    .sort((a, b) => b.quietMinutes - a.quietMinutes);
+}
