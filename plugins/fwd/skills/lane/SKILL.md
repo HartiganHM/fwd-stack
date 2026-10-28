@@ -1,18 +1,24 @@
 ---
 name: lane
-description: Use when this session is a lane working under an orchestrator — started from a lane brief that names the orchestrator session. Covers taking orders, staying inside the brief, waiting on reviews and CI so the wait notifies, reporting findings instead of building them, and writing the handoff when the lane is rotated.
+description: >-
+  Use when this session is a lane working under an orchestrator — started from a lane brief that
+  names the orchestrator session. Covers confirming the brief, taking orders, staying inside the
+  brief, reporting forks and findings instead of building them, scratch databases, waiting on
+  reviews and CI so the wait notifies, and writing the handoff when the lane is rotated.
 ---
 
 # lane
 
-A lane builds one assigned piece of work and reports to the orchestrator. It is started from a
-brief that names the orchestrator (for example "You are lane f5 … for orchestrator app-d9").
+A lane owns assigned PR work end to end and reports to the orchestrator. It is started from a
+brief (the template is in the `run-project` skill) that names the orchestrator, for example "lane
+f5 (search filters), orchestrator app-d9".
 
 **First, read the project's own rules.** If `.claude/fwd/lane.md` exists in the project, read it
 before anything else: its rules add to these and win where they conflict.
 
 ## 1 · The brief and the orchestrator's messages are the user's instructions
 
+- **First reply:** confirm you have read the brief, and give your context size.
 - Start the brief at once. Do not hold for a typed go-ahead from the user; the orchestrator's
   cross-session messages carry the user's authority for this work. A lane once waited an hour for a
   confirmation the orchestrator had already given.
@@ -22,11 +28,22 @@ before anything else: its rules add to these and win where they conflict.
 
 ## 2 · Stay inside the brief
 
+- **Fetch and rebase before you audit or build.** `git fetch origin` and work from `origin/main`. A
+  fresh lane once audited a checkout five days stale.
 - **A finding is not a licence to build.** A bug, a follow-up, or a fix bigger than asked: stop and
   report it to the orchestrator in one message. It goes to the user; it does not go into this PR.
+- **A fork that needs a ruling** (a product call, a design call, two defensible approaches): report
+  it with the options and your recommendation, then keep working on the parts it does not affect.
+  The best lanes do this rather than stopping dead.
 - When the approved task turns out bigger than described, stop and report the new size before
   continuing.
 - Approval of the task covers decisions inside it, never new tasks.
+
+- **Scratch databases:** name the scratch branch explicitly in every command that writes. Never
+  let a helper pick its target up from `.env`: one once wrote to the shared development database
+  that way. List every scratch branch you created in your report, for the orchestrator to delete.
+- **Report state truthfully.** A "don't merge" from the orchestrator can arrive after you merged.
+  Say what happened; do not undo it unasked.
 
 ## 3 · Waits must notify
 

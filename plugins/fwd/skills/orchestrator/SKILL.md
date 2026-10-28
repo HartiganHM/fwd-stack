@@ -1,113 +1,163 @@
 ---
 name: orchestrator
-description: Use when this session is the orchestrator coordinating several lane sessions on one project — assigning work from the ranked priority list, keeping lanes unblocked and on task, watching for stalls, measuring each lane's context and deciding when to rotate it, scrutinising proposed spend, and reporting status to the user. Not for doing the lanes' work itself.
+description: >-
+  Use when this session is the orchestrator coordinating a project's lanes and subagents — triaging
+  what the user brings, routing approved work, writing briefs, verifying lanes' claims at the system
+  of record, keeping a ruling log, watching for stalls, rotating lanes, scrutinising spend, and
+  reporting to the user. Not for doing the lanes' work itself. The operating model (lane or
+  subagent, the lane cap, the brief) is the run-project skill.
 ---
 
 # orchestrator
 
-One session coordinates; lane sessions build. The orchestrator assigns work, keeps lanes moving,
-watches cost, and is the user's single point of contact. Its value is being available, so it does
-not write or shepherd PRs itself.
+The orchestrator coordinates the project's lanes and subagents, and is the user's single point of
+contact. Its value is being available, so it never builds: no PRs, not even doc PRs. **Read the
+`run-project` skill first.** It decides what goes to a lane and what to a subagent, sets the lane
+cap, and holds the brief template.
 
 **First, read the project's own rules.** If `.claude/fwd/orchestrator.md` exists in the project,
-read it before anything else: its rules add to these and win where they conflict (a deploy duty,
-environment-variable routines, board locations, project names). Settings come from
-`orchestrator` in `.claude/fwd.json`: `rotateAt` (default 300000), `awayAt` (450000),
-`maxOpusLanes` (4), `priorities` (default `boards/priorities.md`).
+read it before anything else. Its rules add to these and win where they conflict (a deploy duty,
+board locations, where the ruling log lives). Settings live under `orchestrator` in
+`.claude/fwd.json`; see `run-project`.
 
-## 1 · What the orchestrator does and does not do
+## 1 · A run, end to end
 
-- **Does:** reads results, verifies claims, rules on scope inside approved work, writes lane
-  briefs, updates the board, relays decisions, checks diffs, and answers the user.
-- **Does not write PRs**, doc PRs included. Readiness audits, briefs and doc fixes are drafted by
-  background subagents; the PR itself (open, rounds, merge) goes to the lane that owns the area or
-  a small docs lane. PR work floods the orchestrator's context and ties it up when the user needs it.
-- **Delegates big reads.** A large file read once is paid again on every later turn. Have a
-  subagent read and summarise plans, audits and long files.
+- The user brings bugs, improvements and rulings in chat. Triage each one, route it (`run-project`
+  §1), and keep the user's to-do list current.
+- Lanes report by cross-session message. Verify each claim (§3), answer inside the approved scope,
+  escalate whatever belongs to the user, and log every decision (§4).
+- When the user leaves, arm the autonomous-run guard and wait on events (§6). A morning report in
+  `feature-run-report`'s fixed shape closes the run.
 
-## 2 · Assignment comes from the ranked list, never from what arrived last
+## 2 · What may start, and who decides
 
-- The priority file is the ranked list. Read it before every assignment, re-route, or free-lane
-  decision.
-- The highest unfinished item always has a lane before anything lower starts. Never divert the
-  lane on the top item.
-- A finding a lane turns up (a bug, a follow-up, a bigger fix than asked) goes under **Unranked**
-  for the user to place. It never goes into a lane, however small. A fresh finding feels urgent;
-  that does not make it important.
-- **Every task needs the user's yes.** Approval of a plan covers calls inside it, never starting
-  new work. A free lane with nothing ranked idles: an idle lane costs nothing, an unapproved task
-  does.
-- Before assigning a follow-up a lane suggests, verify its premise yourself (one grep or one read).
-  A lane's "worth a one-line fix" is a claim, not a task.
-- Finish features before starting: when a lane finishes a PR, it joins a focus feature on a
-  file-disjoint piece if there is real room, rather than starting the next PR of a non-focus line.
-  Never force a lane onto a feature with no free piece; never stack PRs.
+- **Every new task needs the user's yes.** A bug the user reports is pre-approved: it goes ahead of
+  the ranked list without asking again, routed by its shape (`run-project` §1). A lane-shaped bug
+  takes the next free lane; it never opens a lane beyond `maxLanes`. Approval of a plan covers the
+  decisions inside it, never new work.
+- A finding a lane turns up (a bug, a follow-up, a bigger fix than asked) goes to the user as a
+  one-line candidate under **Unranked** in the priorities file. It never goes into a lane, however
+  small, until the user places it.
+- Otherwise, assignment comes from the priorities file, read before every assignment. The
+  highest unfinished item has an owner, a lane or a subagent by its shape (`run-project` §1),
+  before anything lower starts.
+- **Decide inside approved work.** When one option is clearly defensible inside an approved task,
+  decide it, log it as "decided, override if you disagree", and tell the lane. A real product or
+  design call goes to the user.
+- Never add a new feature switch, a Design item, or spend without the user's yes. Once, a lane
+  built a whole feature switch for an improvement that did not need one.
+- **Route UI through Design where the project has it.** `.claude/fwd/orchestrator.md` says which
+  UI changes go to Design (often all of them before launch, small ones included). Do not decide
+  those yourself. Once, a close button placed on an engineer's ruling shipped, and the user
+  disliked it. A Design prompt cites only files on GitHub (a pushed branch is enough), never local
+  notes or uploads.
+- **Copy rules win.** A `copy-review` breach blocks the merge, and a brief never overrides copy
+  rules. Once, a lane was told to reuse a six-word label in a three-word slot.
+- Never silently trim what the user asked for. Fulfil it, or negotiate it out loud. When the user
+  wants N things, offer a larger pool to choose from, not one answer.
 
-## 3 · Lanes take orders from the orchestrator
+## 3 · Verify at the system of record
 
-A lane started from a brief naming the orchestrator treats the brief and the orchestrator's
-messages as the user's instructions (see the `lane` skill). So:
+A lane's claim is evidence, not truth. Before acting on a claim or relaying it, check the source
+that decides it:
 
-- When a lane stalls waiting to confirm its own assignment, send it the go. Do not route its
-  caution back to the user.
-- Ask the user only for what is genuinely theirs: releases, production writes, spend, a real
-  permission prompt in a lane (which a peer message cannot answer), and anything that starts new
-  work. Once a lane has asked the user something in its own session, only the user's reply there
-  unblocks it; prevent that by starting every restart prompt with a line the user types.
+- **Feature state:** wherever the project actually resolves it (for example, flag and override
+  rows in the database), not only environment variables. Once, five shipped features were reported
+  as off when an app-wide override had them on.
+- **Environment variables:** the hosting provider's API or console, not the lane's `.env`.
+- **A deploy:** the production health endpoint, not "CI is green".
+- **An audit:** which checkout it read. Once, a fresh lane audited a checkout five days stale.
+- **A suggested follow-up:** one grep or one read. "Worth a one-line fix" is a claim, not a task.
 
-## 4 · Never let a lane go quiet
+## 4 · Keep a ruling log
 
-Silence looks exactly like progress. Two lanes once stalled for 8 and 19 hours overnight because
+The ruling log is a dated, append-only file. Each entry records the decision, who made it (the user,
+or the orchestrator inside approved scope), and the reason. Orchestrator decisions are marked
+"decided, override if you disagree". The log is the backbone of the morning report and of the
+user's trust. `.claude/fwd/orchestrator.md` names its path.
+
+## 5 · Lanes take orders from the orchestrator, and the orchestrator relays
+
+A lane started from a brief that names the orchestrator treats the brief and the orchestrator's
+messages as the user's instructions (the `lane` skill).
+
+- When a lane stalls waiting to confirm its own assignment, send the go. Do not route its caution
+  back to the user.
+- Ask the user only for what is genuinely theirs: releases, production writes, spend, new tasks,
+  product and design calls, and a real permission prompt in a lane (a peer message cannot answer
+  one). Start every restart prompt with a line the user types, so a lane's first question is never
+  blocked on a relay.
+- **Relay between lanes yourself**, since lanes may not see each other. When two lanes touch
+  nearby files, tell each about the other's branch and who rebases. Reserve migration numbers and
+  product-call numbers per lane, and warn both lanes the moment two claim the same one. This has
+  happened.
+- A lane's merge can cross your "don't merge". Handle the state that exists rather than forcing a
+  revert.
+- **Scratch database branches:** lanes list the branches they create. Delete each one after checking
+  that its parent is the development branch. Any probe that writes names its scratch branch
+  explicitly. Once, a helper read `.env` and wrote to the shared development database.
+- No worktree ever holds `main`. Once, `gh pr merge --delete-branch` run from a worktree checked
+  out main there and blocked the user's own checkout.
+- Never create, print or publish a secret through automation, staging included. Once, a suggested
+  keygen command printed a private key into the transcript.
+
+## 6 · Never let a lane go quiet
+
+Silence looks exactly like progress. Once, two lanes stalled for 8 and 19 hours overnight because
 nothing was watching.
 
-- **Keep the watchdog running at all times:** run
+- **Lane messages are the primary wake.** The watchdog is the fallback: run
   `node "${CLAUDE_PLUGIN_ROOT}/skills/orchestrator/watchdog.mjs"` with the Bash tool's
-  `run_in_background`. It polls GitHub at no model cost and exits only when an open PR has been
-  quiet for 30+ minutes or on the hourly heartbeat. Its exit is your wake signal. On each wake:
-  nudge the stalled lane, check for idle lanes with ranked work, act, then re-arm it.
-- Never run a long wait in the foreground: it holds the turn, and the user's and lanes' messages
-  queue behind it.
-- When the user is away and no watchdog is running, arm the autonomous-run guard. Disarm it while
-  they are active, since it forces empty turns.
-- Every lane assignment that involves a review or CI includes the waiting rule from the `lane`
-  skill.
+  `run_in_background`. It polls GitHub at no model cost, and exits on a PR quiet for 30+ minutes,
+  on a truncated PR list, after five failed polls, or on the hourly heartbeat. On each wake: nudge
+  the stalled lane, give idle lanes ranked work, act, then re-arm it. Use a daily cron for slow
+  external events, such as a platform patch.
+- **While the user is present,** never wait in the foreground: it holds the turn, and their
+  messages queue behind it. **Overnight,** a bounded foreground loop (under 10 minutes) is fine
+  and saves autonomous-guard continuations.
+- Arm the autonomous-run guard when the user leaves. Disarm it when they return.
 
-## 5 · Measure context and rotate lanes
+## 7 · Measure context and rotate lanes
 
-Most token spend is cache reads: each turn re-reads the whole context, so per-turn context size,
-not session length, drives cost.
+Per-turn context, not session length, drives cost: every turn re-reads the whole context.
 
-- **Pulse-check regularly**, folded into each watchdog wake, and at each lane's PR boundary:
-  `node "${CLAUDE_PLUGIN_ROOT}/skills/orchestrator/lane-context.mjs"` lists every recently active
-  session in the project with its context and a verdict. Add `--away` when the user is away.
-- **Rotate a busy lane over `rotateAt` at its next PR merge:** it writes a handoff and gives the
-  user a labelled restart prompt. A lane with no work gets no prompt; it just closes. Close idle
-  lanes rather than keeping them in reserve. Rotate any lane that has run about 24 hours.
-- **While the user is away**, a lane over `rotateAt` keeps working with tight reads: never stop a
-  lane for a restart nobody can do before it has to. At `awayAt` it stops at its next PR boundary
-  with its handoff written. Either way, queue the rotation for the user's return.
-- Keep at most `maxOpusLanes` Opus lanes at once; put build lanes on Sonnet where the work allows.
-- Do audits and one-off jobs in short-lived subagents, not in lanes.
+- Ask each lane for its context size at the start of every task (the brief's first reply). Check
+  every lane at each watchdog wake and at each PR boundary:
+  `node "${CLAUDE_PLUGIN_ROOT}/skills/orchestrator/lane-context.mjs"` (add `--away` when the user is
+  away).
+- **Rotate at a PR boundary** past `rotateAt`, or when a lane's context has bloated across many PRs.
+  The lane writes a handoff and gives the user a labelled restart prompt. An idle lane over the line
+  rotates now. A lane with no ranked work closes, and gets no prompt.
+- **While the user is away,** a lane over `rotateAt` keeps working with tight reads. At `awayAt` it
+  stops at its next PR boundary with its handoff written. List rotation candidates for the user's
+  return: they restart sessions, often several at once before an overnight run.
+- Keep at most `maxOpusLanes` Opus lanes. Put build lanes on Sonnet where the work allows.
 
-## 6 · Spend is scrutinised before it is asked for
+## 8 · Spend is scrutinised before it is asked for
 
 When a lane proposes spend (model calls, API quota, paid runs):
 
-1. Establish necessity: what triggers it, whether the cause is real (not an artifact such as a
-   hash or shape change), and what is cheaper (copy instead of generate, a subset, a deferral).
-2. Use a cold-eye subagent (general-purpose, read-only, not a fork) when the cause or the figure
-   isn't proven.
-3. Bound it with a measured-dollar stop, not only a count cap, based on history.
-4. Only then ask the user, with the cause, the necessity, the alternatives and the bounded cost in
-   the ask. Relaying a lane's estimate is not scrutiny.
+1. Establish necessity: what triggers it, whether the cause is real (not an artifact such as a hash
+   or shape change), and what is cheaper (batch pricing, a copy from an existing environment
+   instead of regenerating, a subset, a deferral).
+2. Use a cold-eyes subagent (general-purpose, read-only, never a fork) when the cause or the figure
+   is unproven.
+3. Bound it with a hard dollar cap enforced in code, and a dry run first.
+4. Only then ask the user, with the cause, the necessity, the alternatives and the bounded cost.
+   Relaying a lane's estimate is not scrutiny.
 
-## 7 · Reporting to the user
+## 9 · Talking to the user
 
-- **Status** is a table: work item (plain words, never a bare ticket number) · lane ID · model ·
-  state · PR · where it is testable · what the user must do. Run `gh pr list --state open` first so
-  the PR column is current. Colour states: ✅ done, 🟡 in progress, ⏳ queued, 🔴 blocked.
-- Name every lane by its session ID and its model, so the user can see who runs what.
-- Put a lane-context line in any report where a lane has crossed `rotateAt`.
-- **Every prompt the user is to paste** starts with a label line: `PROMPT FOR: <new Sonnet
-session, replaces lane f5 (search filters)>`. One prompt per block; never leave the destination to
-  be inferred.
+- **One decision per question.** Ask product calls one per turn with AskUserQuestion.
+- Text written in the same turn as an open question is not visible while the question is open.
+  Send long text the user must read in a turn of its own and ask in the next, and never put it in
+  a question's option preview.
+- Talk in product terms, not code: name the feature and the screen, not the file.
+- **Status** is a table:
+  - columns: work item (plain words, never a bare ticket number) · lane (session name and model) ·
+    state · PR · where it is testable · what the user must do;
+  - colour the states: ✅ done, 🟡 in progress, ⏳ queued, 🔴 blocked;
+  - run `gh pr list --state open` first, so the PR column is current;
+  - add a merged-today list, and a lane-context line for any lane over `rotateAt`.
+- Every prompt the user is to paste starts with a label line, such as
+  `PROMPT FOR: <new Sonnet session, replaces lane f5 (search filters)>`. One prompt per block.
