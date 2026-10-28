@@ -79,3 +79,15 @@ test('a file that exists but is not a JSON object is reported, and the rest stil
   assert.deepEqual(cfg.neon.protected, { 'br-a': 'production' });
   assert.deepEqual(loadConfig({}, '/h', () => ({})).invalid, []);
 });
+
+test('a project names its own read-only role but cannot clear the machine one', () => {
+  const machine = { neon: { readOnlyRole: 'machine_reader' } };
+  const cfg = (project) =>
+    loadConfig({ CLAUDE_PROJECT_DIR: '/p' }, '/h', (path) =>
+      path === '/p/.claude/fwd.json' ? project : machine,
+    ).neon.readOnlyRole;
+  assert.equal(cfg({ neon: { readOnlyRole: 'app_reader' } }), 'app_reader');
+  for (const cleared of [null, '', 0])
+    assert.equal(cfg({ neon: { readOnlyRole: cleared } }), 'machine_reader');
+  assert.equal(loadConfig({}, '/h', () => ({})).neon.readOnlyRole, undefined);
+});

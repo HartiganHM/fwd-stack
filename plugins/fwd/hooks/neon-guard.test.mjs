@@ -241,3 +241,53 @@ test('a call is checked by its whole identifier', () => {
 test('the Realtime secret with no branch is read from production, so it is denied', () => {
   assert.match(neonDecision('get_realtime_secret', {}, prod), /exposes/);
 });
+
+test('row-locking reads are not reads', () => {
+  for (const sql of [
+    'select * from users for share',
+    'select * from users for key share',
+    'select * from users for no key update',
+  ])
+    assert.match(
+      neonDecision('run_sql', { branch_id: 'br-prod', sql }, prod),
+      /one read statement/,
+      sql,
+    );
+});
+
+test('with a read-only role set, run_sql on a protected branch must use it', () => {
+  const opts = { readOnlyRole: 'agent_reader' };
+  const read = { branch_id: 'br-prod', sql: 'select 1' };
+  assert.match(
+    neonDecision('run_sql', read, prod, opts),
+    /role_name "agent_reader"/,
+  );
+  assert.match(
+    neonDecision('run_sql', { ...read, role_name: 'neondb_owner' }, prod, opts),
+    /read-only role/,
+  );
+  assert.equal(
+    neonDecision('run_sql', { ...read, role_name: 'agent_reader' }, prod, opts),
+    null,
+  );
+  // The role does not relax the text checks.
+  assert.match(
+    neonDecision(
+      'run_sql',
+      { branch_id: 'br-prod', role_name: 'agent_reader', sql: 'delete from x' },
+      prod,
+      opts,
+    ),
+    /one read statement/,
+  );
+  // An unprotected branch is not affected.
+  assert.equal(
+    neonDecision(
+      'run_sql',
+      { branch_id: 'br-dev', sql: 'delete from x' },
+      prod,
+      opts,
+    ),
+    null,
+  );
+});

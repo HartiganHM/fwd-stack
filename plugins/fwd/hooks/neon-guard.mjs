@@ -79,8 +79,17 @@ const TAKES_BRANCH = new Set([
   'get_realtime_secret',
 ]);
 
-/** null to allow, or the reason to deny. `protectedIds` maps a branch or endpoint id to a label. */
-export function neonDecision(tool, args = {}, protectedIds = {}) {
+/**
+ * null to allow, or the reason to deny. `protectedIds` maps a branch or endpoint id to a label.
+ * With `readOnlyRole`, run_sql on a protected branch must also run as that role: the text checks
+ * below are strict, but only a role that cannot write makes a read read-only in the database.
+ */
+export function neonDecision(
+  tool,
+  args = {},
+  protectedIds = {},
+  { readOnlyRole } = {},
+) {
   if (ALWAYS_BLOCKED.has(tool))
     return `${tool} can move or replace a live branch.`;
 
@@ -113,6 +122,8 @@ export function neonDecision(tool, args = {}, protectedIds = {}) {
       ? `EXPLAIN ANALYZE executes the statement on ${target}.`
       : null;
   if (tool === 'run_sql') {
+    if (readOnlyRole && args.role_name !== readOnlyRole)
+      return `run_sql on ${target} must run as the read-only role: pass role_name "${readOnlyRole}".`;
     const raw = String(args.sql ?? '');
     // Fail closed on syntax this guard does not parse: a quoted identifier (`"setval"(…)` slips the
     // function list), a dollar-quoted body (`$$--$$` reads as a comment and hides what follows), a
@@ -132,6 +143,8 @@ export function neonDecision(tool, args = {}, protectedIds = {}) {
     if (
       single &&
       /^(select|with|show|explain(?!\s+analyze)|values|table)\b/i.test(sql) &&
+      // `FOR SHARE` / `FOR KEY SHARE` take row locks; `FOR UPDATE` is caught as a write already.
+      !/\bshare\b/i.test(sql) &&
       !WRITE_SQL.test(sql) &&
       callsOnlyReads(sql)
     )

@@ -4,7 +4,10 @@
 //
 //   {
 //     "ownApp": true,                                   // one of the owner's own apps
-//     "neon": { "protected": { "br-…": "production" } },  // read-only Neon branches/endpoints
+//     "neon": {
+//       "protected": { "br-…": "production" },          // read-only Neon branches/endpoints
+//       "readOnlyRole": "agent_reader"                  // run_sql there must use this role
+//     },
 //     "sessionBudget": { "warn": 20, "critical": 35 }     // assistant turns
 //   }
 //
@@ -72,6 +75,13 @@ export function loadConfig(
       ...ids(project.neon?.protected),
     },
   };
+  // A role is per database, so a project may name its own; it cannot clear the machine's by
+  // setting it to null or an empty string.
+  const role = (v) => (typeof v === 'string' && v ? v : undefined);
+  const readOnlyRole =
+    role(project.neon?.readOnlyRole) ?? role(machine.neon?.readOnlyRole);
+  if (readOnlyRole) merged.neon.readOnlyRole = readOnlyRole;
+  else delete merged.neon.readOnlyRole;
   merged.invalid = invalid;
   return merged;
 }

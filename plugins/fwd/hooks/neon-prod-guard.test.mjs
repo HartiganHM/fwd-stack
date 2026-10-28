@@ -34,3 +34,22 @@ test('an unreadable fwd.json denies every Neon call', () => {
 test('no fwd.json leaves an unprotected branch free', () => {
   assert.equal(run(undefined, call), '');
 });
+
+test('the hook passes the configured read-only role to the guard', () => {
+  const cfg = JSON.stringify({
+    neon: {
+      protected: { 'br-prod': 'production' },
+      readOnlyRole: 'agent_reader',
+    },
+  });
+  const read = (role_name) => ({
+    tool_name: 'mcp__neon__run_sql',
+    tool_input: {
+      branch_id: 'br-prod',
+      sql: 'select 1',
+      ...(role_name && { role_name }),
+    },
+  });
+  assert.match(run(cfg, read()), /agent_reader/);
+  assert.equal(run(cfg, read('agent_reader')), '');
+});
