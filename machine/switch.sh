@@ -63,8 +63,11 @@ for s in "${FWD_SKILLS[@]}"; do
   # -L too: a skill that is a symlink (dangling or not) is still a copy to back up and retire.
   { [ -e "$CFG/skills/$s" ] || [ -L "$CFG/skills/$s" ]; } && run "cp -Rp '$CFG/skills/$s' '$BACKUP/skills/$s'"
 done
-[ -d "$CFG/hooks" ] && run "cp -Rp '$CFG/hooks' '$BACKUP/hooks'"
-[ -d "$CFG/lib" ] && run "cp -Rp '$CFG/lib' '$BACKUP/lib'"
+# Contents, not the folder: when hooks/ or lib/ is a symlinked directory, copying the link would
+# leave a backup that points at the very files step 6 deletes.
+for d in hooks lib; do
+  [ -d "$CFG/$d" ] && run "mkdir -p '$BACKUP/$d' && cp -Rp '$CFG/$d/.' '$BACKUP/$d/'"
+done
 WAS_INSTALLED=$([ -n "$PREV_PATH" ] && echo 1 || echo 0)
 WAS_LINK=$([ -L "$LINK" ] && readlink "$LINK" || echo "")
 # An existing install is backed up whole (its cached copy and the install record), so a failed
