@@ -9,6 +9,7 @@
 // (default 300k and 450k tokens).
 import { openSync, readSync, closeSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
+import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 
 import { loadConfig } from '../../lib/fwd-config.mjs';
@@ -26,36 +27,71 @@ const away = args.includes('--away');
 const config = loadConfig({ ...process.env, CLAUDE_PROJECT_DIR: project });
 const limits = { ...config.orchestrator, away };
 const configDir = process.env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude');
-const dir = join(configDir, 'projects', projectDirName(project));
+// A lane in a worktree writes its transcript under the worktree's path, not the project's, so
+// every worktree of the repository is scanned too.
+const worktrees = () => {
+  try {
+    return execFileSync(
+      'git',
+      ['-C', project, 'worktree', 'list', '--porcelain'],
+      {
+        encoding: 'utf8',
+        timeout: 10_000,
+        stdio: ['ignore', 'pipe', 'ignore'], // not a repository: no worktrees, and no noise
+      },
+    )
+      .split('\n')
+      .filter((l) => l.startsWith('worktree '))
+      .map((l) => l.slice('worktree '.length));
+  } catch {
+    return [];
+  }
+};
+const dirs = [...new Set([project, ...worktrees()].map(projectDirName))].map(
+  (name) => join(configDir, 'projects', name),
+);
 
-// The tail is enough: the last turn's usage and the session's name are both near the end, and
-// a long transcript runs to tens of megabytes.
+// The tail is usually enough: the last turn's usage and the session's name are both near the end,
+// and a long transcript runs to tens of megabytes. One large tool result can push the last usage
+// out of the window, so the window doubles until a usage record is in it or the file is read whole.
 const TAIL = 4 * 1024 * 1024;
-const tail = (path, size) => {
+const tail = (path, size, len) => {
   const fd = openSync(path, 'r');
   try {
-    const len = Math.min(size, TAIL);
-    const buf = Buffer.alloc(len);
-    readSync(fd, buf, 0, len, size - len);
+    const n = Math.min(size, len);
+    const buf = Buffer.alloc(n);
+    readSync(fd, buf, 0, n, size - n);
     return buf.toString('utf8');
   } finally {
     closeSync(fd);
   }
 };
+const summarize = (path, size) => {
+  for (let len = TAIL; ; len *= 2) {
+    const s = sessionSummary(tail(path, size, len));
+    if (s.context !== null || len >= size) return s;
+  }
+};
 
-let files = [];
-try {
-  files = readdirSync(dir).filter((f) => f.endsWith('.jsonl'));
-} catch {
-  console.error(`no transcripts for ${project} (looked in ${dir})`);
+const files = dirs.flatMap((dir) => {
+  try {
+    return readdirSync(dir)
+      .filter((f) => f.endsWith('.jsonl'))
+      .map((f) => ({ f, path: join(dir, f) }));
+  } catch {
+    return [];
+  }
+});
+if (files.length === 0) {
+  console.error(`no transcripts for ${project} (looked in ${dirs.join(', ')})`);
   process.exit(1);
 }
 const since = Date.now() - activeMinutes * 60_000;
 const lanes = files
-  .map((f) => ({ f, stat: statSync(join(dir, f)) }))
+  .map(({ f, path }) => ({ f, path, stat: statSync(path) }))
   .filter(({ stat }) => stat.mtimeMs >= since)
-  .map(({ f, stat }) => {
-    const s = sessionSummary(tail(join(dir, f), stat.size));
+  .map(({ f, path, stat }) => {
+    const s = summarize(path, stat.size);
     return {
       session: f.replace(/\.jsonl$/, ''),
       name: s.name ?? f.slice(0, 8),
