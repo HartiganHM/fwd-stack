@@ -790,7 +790,8 @@ node "${CLAUDE_PLUGIN_ROOT}/skills/pr-review/precheck.mjs" record <file>   # or 
 
 The ledger lives in the plugin's data folder (`~/.claude/plugins/data/fwd-fwd-stack/`, or under
 `CLAUDE_CONFIG_DIR`), never beside these scripts: it holds finding text from private
-repositories. Each row carries its repository, so `score` run outside a checkout takes
+repositories. A PR's first `score` runs in a checkout of its branch: the row is found by the
+branch name. Re-scoring a PR that already has a row can run from any other git checkout with
 `--repo=owner/name`.
 
 **Run it on EVERY PR while the trial is open, including the ones you feel sure
@@ -863,7 +864,9 @@ says where to point the pass — which is a better answer than whether to keep i
 
 At three scorable PRs (round 1 raised findings, current era, fewer than half of unstated kind)
 of at least two kinds the ledger prints a verdict: **≥70%** cut Copilot to one
-confirmation round, **30–70%** keep both, **<30%** delete the pass. Bring the
+confirmation round, **30–70%** keep both, **<30%** the hit rate is low: read it with the pre-open fix count before
+recommending deletion, because a pass that fixes what it finds before the PR opens scores badly
+here by construction. Bring the
 verdict to the user rather than acting on it — this section stays a trial, not
 policy, until that number exists. Every other rule in this document was written
 after a measured cost; this one currently has an argument instead.
