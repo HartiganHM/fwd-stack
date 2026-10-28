@@ -11,9 +11,33 @@ BACKUP="${1:-$(cat "$CFG/backups/fwd-switchover-last" 2>/dev/null || true)}"
 [ -f "$BACKUP/state" ] || { echo "$BACKUP has no state file (an interrupted backup); refusing to use it. Nothing changed."; exit 1; }
 echo "== rolling back from $BACKUP"
 PREV_PATH=""
-LEDGER_EXISTED=1
 # shellcheck disable=SC1091
 . "$BACKUP/state"
+
+LEGACY="$CFG/skills/pr-review/precheck-ledger.json"
+LEDGER="$CFG/plugins/data/fwd-fwd-stack/precheck-ledger.json"
+NOW=$(date +%Y%m%d-%H%M%S)
+# Ledger entries are never lost: every ledger this rollback is about to replace or see deleted gets a
+# recovery copy in the backup folder first (they survive a failed or repeated rollback), and the
+# restored legacy ledger is the union of all of them, entries de-duplicated.
+merge_ledgers() { # merge_ledgers <into> <from>...
+  node -e '
+    const fs = require("fs");
+    const [into, ...from] = process.argv.slice(1);
+    const read = (p) => { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; } };
+    const seen = new Set(), entries = [];
+    for (const p of [into, ...from]) for (const e of read(p)?.entries ?? []) {
+      const k = JSON.stringify(e);
+      if (!seen.has(k)) { seen.add(k); entries.push(e); }
+    }
+    fs.writeFileSync(into, JSON.stringify({ ...(read(into) ?? read(from[0]) ?? {}), entries }, null, 2) + "\n");
+  ' "$@"
+}
+LIVE_COPY=""
+if [ -f "$LEGACY" ]; then
+  LIVE_COPY="$BACKUP/ledger-recovery-legacy-$NOW.json"
+  cp -p "$LEGACY" "$LIVE_COPY"
+fi
 
 [ -f "$BACKUP/settings.json" ] && cp -p "$BACKUP/settings.json" "$CFG/settings.json"
 # Written through any symlink: `cp` onto a link writes its target, so a dotfiles link survives.
@@ -25,16 +49,17 @@ for d in "$BACKUP"/skills/*; do
   mkdir -p "$CFG/skills"
   cp -Rp "$d" "$CFG/skills/"
 done
+# A ledger already at the legacy path (from an earlier, failed rollback) holds the newest entries.
+[ -n "$LIVE_COPY" ] && { mkdir -p "$(dirname "$LEGACY")"; [ -f "$LEGACY" ] && merge_ledgers "$LEGACY" "$LIVE_COPY" || cp -p "$LIVE_COPY" "$LEGACY"; }
 [ -d "$BACKUP/hooks" ] && { mkdir -p "$CFG/hooks"; cp -Rp "$BACKUP/hooks/." "$CFG/hooks/"; }
 [ -d "$BACKUP/lib" ] && { mkdir -p "$CFG/lib"; cp -Rp "$BACKUP/lib/." "$CFG/lib/"; }
 
-# When the plugin goes, its data folder goes with it (`plugin uninstall` deletes it). The ledger there
-# holds everything the legacy one did plus any entries recorded since the switch, so it moves back to
-# the legacy path the restored skill reads, and nothing recorded after the switch is lost.
-LEDGER="$CFG/plugins/data/fwd-fwd-stack/precheck-ledger.json"
-if [ "$WAS_INSTALLED" != 1 ] && [ "$LEDGER_EXISTED" = 0 ] && [ -f "$LEDGER" ]; then
-  mkdir -p "$CFG/skills/pr-review"
-  mv "$LEDGER" "$CFG/skills/pr-review/precheck-ledger.json"
+# When the plugin goes, its data folder goes with it (`plugin uninstall` deletes it), whatever was
+# there before the switch. Its ledger is merged into the legacy one the restored skill reads.
+if [ "$WAS_INSTALLED" != 1 ] && [ -f "$LEDGER" ]; then
+  cp -p "$LEDGER" "$BACKUP/ledger-recovery-data-$NOW.json"
+  mkdir -p "$(dirname "$LEGACY")"
+  if [ -f "$LEGACY" ]; then merge_ledgers "$LEGACY" "$LEDGER"; else cp -p "$LEDGER" "$LEGACY"; fi
 fi
 
 # The plugin and the link go back to how they were: kept if they were there before this run.
