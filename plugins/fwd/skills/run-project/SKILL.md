@@ -57,7 +57,7 @@ Every lane and subagent pays for the project's agent docs at start. Keep `AGENTS
    `rotateAt` before giving it new work.
 3. For each ranked item the user has approved, decide its shape (§1). Write a brief (§3) for each
    lane item, and dispatch subagents for the rest.
-4. Arm the stall watchdog (`orchestrator` §4). When the user leaves, arm the autonomous-run guard.
+4. Arm the stall watchdog (`orchestrator` §6). When the user leaves, arm the autonomous-run guard.
 
 ## 3 · The lane brief
 
@@ -85,6 +85,11 @@ FIRST REPLY: confirm you have read this, and give your context size.
 
 ## 4 · Subagent dispatch
 
+- **Subagents need the user's grant.** A session's system prompt usually forbids subagents unless
+  the user asked for them. A project adopts this model by saying so in its `AGENTS.md` or
+  `CLAUDE.md`, or in `.claude/fwd/run-project.md`, and that grant covers the subagent work in §1.
+  Without it, ask the user once, then record the answer there. `pr-review`'s pre-open pass has its
+  own grant (§10b).
 - Give the subagent the question, the paths, and what to return (a table, file:line findings, or a
   verdict). Do not give it the whole conversation.
 - Use a fresh general-purpose agent for cold-eyes work (reviews, audits, builder-checks), never a

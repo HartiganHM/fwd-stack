@@ -31,8 +31,9 @@ board locations, where the ruling log lives). Settings live under `orchestrator`
 
 ## 2 · What may start, and who decides
 
-- **Every new task needs the user's yes.** A bug the user reports is pre-approved: it goes to the
-  next free lane, ahead of the ranked list, without asking again. Approval of a plan covers the
+- **Every new task needs the user's yes.** A bug the user reports is pre-approved: it goes ahead of
+  the ranked list without asking again, routed by its shape (`run-project` §1). A lane-shaped bug
+  takes the next free lane; it never opens a lane beyond `maxLanes`. Approval of a plan covers the
   decisions inside it, never new work.
 - A finding a lane turns up (a bug, a follow-up, a bigger fix than asked) goes to the user as a
   one-line candidate under **Unranked** in the priorities file. It never goes into a lane, however
@@ -44,9 +45,11 @@ board locations, where the ruling log lives). Settings live under `orchestrator`
   design call goes to the user.
 - Never add a new feature switch, a Design item, or spend without the user's yes. Once, a lane
   built a whole feature switch for an improvement that did not need one.
-- **Route UI to Design.** Before launch, most UI changes, small ones included, go to Design. Once,
-  a close button placed on an engineer's ruling shipped, and the user disliked it. A Design prompt
-  cites only files on GitHub (a pushed branch is enough), never local notes or uploads.
+- **Route UI through Design where the project has it.** `.claude/fwd/orchestrator.md` says which
+  UI changes go to Design (often all of them before launch, small ones included). Do not decide
+  those yourself. Once, a close button placed on an engineer's ruling shipped, and the user
+  disliked it. A Design prompt cites only files on GitHub (a pushed branch is enough), never local
+  notes or uploads.
 - **Copy rules win.** A `copy-review` breach blocks the merge, and a brief never overrides copy
   rules. Once, a lane was told to reuse a six-word label in a three-word slot.
 - Never silently trim what the user asked for. Fulfil it, or negotiate it out loud. When the user
@@ -57,8 +60,9 @@ board locations, where the ruling log lives). Settings live under `orchestrator`
 A lane's claim is evidence, not truth. Before acting on a claim or relaying it, check the source
 that decides it:
 
-- **Feature state:** the flag and override tables in the database, not only environment
-  variables. Once, five shipped features were reported as off when app-wide overrides had them on.
+- **Feature state:** wherever the project actually resolves it (for example, flag and override
+  rows in the database), not only environment variables. Once, five shipped features were reported
+  as off when an app-wide override had them on.
 - **Environment variables:** the hosting provider's API or console, not the lane's `.env`.
 - **A deploy:** the production health endpoint, not "CI is green".
 - **An audit:** which checkout it read. Once, a fresh lane audited a checkout five days stale.
