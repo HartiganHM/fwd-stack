@@ -97,3 +97,19 @@ test('splits by project, model and side, and names sessions', () => {
   assert.match(md, /\| lane-a \| ~\/P\/a \|/);
   assert.match(md, /sonnet-5-5/);
 });
+
+test('a turn whose later lines raise its output count counts once, at the largest reading', () => {
+  const line = (out) =>
+    JSON.stringify({
+      type: 'assistant',
+      sessionId: 's',
+      cwd: '/h/P/a',
+      timestamp: '2026-10-28T10:00:00Z',
+      requestId: 'r',
+      message: { id: 'm', usage: { input_tokens: 100, output_tokens: out } },
+    });
+  const acc = tally([line(1), line(1000), line(1000), line(5)], { home: '/h' });
+  assert.equal(acc.total, 100 + 1000 * 5);
+  assert.equal(acc.sessions.get('s').turns, 1);
+  assert.equal(acc.sessions.get('s').weight, 5100);
+});

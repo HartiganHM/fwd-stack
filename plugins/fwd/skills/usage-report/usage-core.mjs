@@ -59,11 +59,17 @@ export function tally(
     )
       acc.names.set(e.sessionId, e.customTitle);
     if (e.type !== 'assistant' || !e.message?.usage) continue;
+    // A turn is written as several lines, one per content block, and a later line can carry a
+    // larger output count than the first. Each turn counts once, at its largest reading: a repeat
+    // adds only what it raises the turn by.
     const key = `${e.message.id}:${e.requestId ?? ''}`;
-    if (acc.seen.has(key)) continue;
-    acc.seen.add(key);
     if (Date.parse(e.timestamp) < since) continue;
-    const w = weigh(e.message.usage);
+    const full = weigh(e.message.usage);
+    const before = acc.seen.get(key);
+    if (before !== undefined && full <= before) continue;
+    acc.seen.set(key, full);
+    const w = full - (before ?? 0);
+    const first = before === undefined;
     const project = projectOf(resolve(e.cwd ?? ''), home);
     const model = (e.message.model ?? '?').replace(/^claude-/, '');
     const side = e.isSidechain ? 'subagent' : 'main';
@@ -80,7 +86,7 @@ export function tally(
     };
     s.weight += w;
     add(s.projects, project, w);
-    if (!e.isSidechain) {
+    if (!e.isSidechain && first) {
       s.turns += 1;
       s.contexts.push(context(e.message.usage));
     }
@@ -91,7 +97,7 @@ export function tally(
 
 export const newTally = () => ({
   total: 0,
-  seen: new Set(),
+  seen: new Map(),
   names: new Map(),
   sessions: new Map(),
   byProject: new Map(),
