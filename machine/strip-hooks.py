@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Remove the user-scope hook entries that the fwd plugin now provides, leaving every other hook alone."""
+"""Remove the user-scope hook entries that the fwd plugin now provides, leaving every other hook alone.
+
+    strip-hooks.py <settings.json>           remove them
+    strip-hooks.py --check <settings.json>   exit 1 if any remain, change nothing
+
+Only hook command fields are read, so a permission rule naming one of these files is left alone.
+"""
 import json
 import sys
 
@@ -12,8 +18,20 @@ PATTERNS = (
     "hooks/session-budget.mjs",
 )
 
-path = sys.argv[1]
+check = sys.argv[1] == "--check"
+path = sys.argv[2] if check else sys.argv[1]
 settings = json.load(open(path))
+if check:
+    stale = [
+        h.get("command", "")
+        for entries in settings.get("hooks", {}).values()
+        for entry in entries
+        for h in entry.get("hooks", [])
+        if any(p in h.get("command", "") for p in PATTERNS)
+    ]
+    for command in stale:
+        print(f"stale: {command}")
+    sys.exit(1 if stale else 0)
 removed = 0
 for event, entries in list(settings.get("hooks", {}).items()):
     kept_entries = []

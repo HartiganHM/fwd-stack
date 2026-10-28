@@ -11,6 +11,7 @@ BACKUP="${1:-$(cat "$CFG/backups/fwd-switchover-last" 2>/dev/null || true)}"
 [ -f "$BACKUP/state" ] || { echo "$BACKUP has no state file (an interrupted backup); refusing to use it. Nothing changed."; exit 1; }
 echo "== rolling back from $BACKUP"
 PREV_PATH=""
+LEDGER_EXISTED=1
 # shellcheck disable=SC1091
 . "$BACKUP/state"
 
@@ -27,10 +28,18 @@ done
 [ -d "$BACKUP/hooks" ] && { mkdir -p "$CFG/hooks"; cp -Rp "$BACKUP/hooks/." "$CFG/hooks/"; }
 [ -d "$BACKUP/lib" ] && { mkdir -p "$CFG/lib"; cp -Rp "$BACKUP/lib/." "$CFG/lib/"; }
 
+# A ledger this run carried into the data folder goes; the restored legacy ledger is the record again.
+[ "$LEDGER_EXISTED" = 0 ] && rm -f "$CFG/plugins/data/fwd-fwd-stack/precheck-ledger.json"
+
 # The plugin and the link go back to how they were: kept if they were there before this run.
 if [ -n "$WAS_LINK" ]; then ln -sfn "$WAS_LINK" "$CFG/fwd"; else rm -f "$CFG/fwd"; fi
 if [ "$WAS_INSTALLED" != 1 ]; then
   claude plugin uninstall fwd@fwd-stack --scope user >/dev/null 2>&1 || true
+  # Absent already is success; still listed is a real failure, reported rather than hidden.
+  if claude plugin list --json 2>/dev/null | grep -q '"fwd@fwd-stack"'; then
+    echo "!! rollback restored your files, but 'claude plugin uninstall fwd@fwd-stack' failed: the plugin is still installed. Remove it by hand."
+    exit 1
+  fi
   echo "== rolled back; the plugin is uninstalled (it was not installed before)."
 else
   # Put the previous install back exactly: its cached copy and the install record that points at it.

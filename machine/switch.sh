@@ -23,8 +23,9 @@ LINK="$CFG/fwd" # stable path for Bash commands and docs: <config>/fwd/skills/..
 FWD_SKILLS=()
 for d in "$HERE/../plugins/fwd/skills"/*/; do FWD_SKILLS+=("$(basename "$d")"); done
 # CLAUDE.md is edited where it really lives, so a dotfiles symlink stays a symlink.
+# The whole chain is resolved (a link to a link), so no intermediate link is replaced by a file.
 CLAUDE_MD="$CFG/CLAUDE.md"
-[ -L "$CLAUDE_MD" ] && CLAUDE_MD="$(cd "$(dirname "$CLAUDE_MD")" && cd "$(dirname "$(readlink "$CLAUDE_MD")")" && pwd)/$(basename "$(readlink "$CLAUDE_MD")")"
+[ -L "$CLAUDE_MD" ] && CLAUDE_MD="$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$CLAUDE_MD")"
 # How CLAUDE.md names the config folder: `~/.claude` by default, else its absolute path.
 if [ "$CFG" = "$HOME/.claude" ]; then SHOWN='~/.claude'; else SHOWN="$CFG"; fi
 
@@ -78,7 +79,9 @@ if [ "$WAS_INSTALLED" = 1 ]; then
 fi
 if [ $DRY -eq 0 ]; then
   # Written last: rollback.sh refuses a backup without it, so an interrupted backup is never used.
-  printf 'WAS_INSTALLED=%s\nWAS_LINK=%q\nCLAUDE_MD=%q\nPREV_PATH=%q\n' "$WAS_INSTALLED" "$WAS_LINK" "$CLAUDE_MD" "$PREV_PATH" >"$BACKUP/state"
+  LEDGER_EXISTED=$([ -f "$DATA/precheck-ledger.json" ] && echo 1 || echo 0)
+  printf 'WAS_INSTALLED=%s\nWAS_LINK=%q\nCLAUDE_MD=%q\nPREV_PATH=%q\nLEDGER_EXISTED=%s\n' \
+    "$WAS_INSTALLED" "$WAS_LINK" "$CLAUDE_MD" "$PREV_PATH" "$LEDGER_EXISTED" >"$BACKUP/state"
   echo "$BACKUP" >"$CFG/backups/fwd-switchover-last"
   # From here, any failure rolls back to this backup.
   trap 'echo "!! step failed: rolling back from $BACKUP"; "$HERE/rollback.sh" "$BACKUP"; exit 1' ERR
