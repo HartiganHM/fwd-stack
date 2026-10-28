@@ -25,6 +25,7 @@ const reason = config.invalid.length
       name.slice('mcp__neon__'.length),
       input.tool_input ?? {},
       config.neon.protected,
+      { readOnlyRole: config.neon.readOnlyRole },
     );
 if (reason)
   process.stdout.write(

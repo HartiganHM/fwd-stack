@@ -4,7 +4,10 @@
 //
 //   {
 //     "ownApp": true,                                   // one of the owner's own apps
-//     "neon": { "protected": { "br-…": "production" } },  // read-only Neon branches/endpoints
+//     "neon": {
+//       "protected": { "br-…": "production" },          // read-only Neon branches/endpoints
+//       "readOnlyRole": "agent_reader"                  // run_sql there must use this role
+//     },
 //     "sessionBudget": { "warn": 20, "critical": 35 }     // assistant turns
 //   }
 //
@@ -72,6 +75,14 @@ export function loadConfig(
       ...ids(project.neon?.protected),
     },
   };
+  // The machine's role, when set, is the safety net and wins: a project file could otherwise swap
+  // it for a writer role. Neon roles belong to a branch, so a project whose branches the machine
+  // file does not cover names its own here.
+  const role = (v) => (typeof v === 'string' && v ? v : undefined);
+  const readOnlyRole =
+    role(machine.neon?.readOnlyRole) ?? role(project.neon?.readOnlyRole);
+  if (readOnlyRole) merged.neon.readOnlyRole = readOnlyRole;
+  else delete merged.neon.readOnlyRole;
   merged.invalid = invalid;
   return merged;
 }
