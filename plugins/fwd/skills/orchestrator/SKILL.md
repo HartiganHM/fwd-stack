@@ -39,7 +39,8 @@ board locations, where the ruling log lives). Settings live under `orchestrator`
   one-line candidate under **Unranked** in the priorities file. It never goes into a lane, however
   small, until the user places it.
 - Otherwise, assignment comes from the priorities file, read before every assignment. The
-  highest unfinished item has a lane before anything lower starts.
+  highest unfinished item has an owner, a lane or a subagent by its shape (`run-project` §1),
+  before anything lower starts.
 - **Decide inside approved work.** When one option is clearly defensible inside an approved task,
   decide it, log it as "decided, override if you disagree", and tell the lane. A real product or
   design call goes to the user.
