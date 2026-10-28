@@ -93,5 +93,10 @@ test('an agent name from the head wins over a title in the tail', () => {
   );
   assert.equal(laneName(tail, head), 'lane-a');
   assert.equal(laneName(tail, {}), 'later title');
+  // A title only in the head may be superseded by a rename between the windows: not used.
+  const oldTitle = sessionSummary(
+    JSON.stringify({ type: 'custom-title', customTitle: 'old title' }),
+  );
+  assert.equal(laneName(sessionSummary(''), oldTitle), null);
   assert.equal(laneName(sessionSummary(''), {}), null);
 });
