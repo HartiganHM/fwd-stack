@@ -126,6 +126,12 @@ It does five things:
 gate and the autonomous-run guard. Run the switch when no session is mid-review or mid-merge,
 then restart sessions so they load the plugin's hooks.
 
+**Shipping a plugin change to a machine.** Claude Code fetches a new copy only when
+`plugins/fwd/.claude-plugin/plugin.json`'s `version` changes, so a merged change to the plugin
+does nothing on a machine until that number is raised. Raise it in the change itself, or in a
+follow-up PR, then run `machine/switch.sh` again: it updates the plugin, re-points
+`~/.claude/fwd` at the new copy and verifies.
+
 ## Working on the kit
 
 ```sh
