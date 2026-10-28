@@ -9,7 +9,7 @@
 // (default 300k and 450k tokens).
 import { openSync, readSync, closeSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 import { loadConfig } from '../../lib/fwd-config.mjs';
 import { projectDirName, sessionSummary, verdict } from './lane-core.mjs';
@@ -19,7 +19,7 @@ const flag = (name) => {
   const i = args.indexOf(`--${name}`);
   return i === -1 ? undefined : args[i + 1];
 };
-const project = flag('project') ?? process.cwd();
+const project = resolve(flag('project') ?? process.cwd());
 const activeMinutes = Number(flag('active') ?? 120);
 const away = args.includes('--away');
 

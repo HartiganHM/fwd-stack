@@ -28,8 +28,11 @@ const stall = Number(flag('stall', 30));
 const heartbeat = Number(flag('heartbeat', 60));
 const interval = Number(flag('interval', 120)) * 1000;
 
-const openPrs = () =>
-  JSON.parse(
+// gh lists 30 by default, drafts included. Ask for far more, and treat a full page as a partial
+// list the orchestrator must hear about rather than a complete one.
+const LIMIT = 1000;
+const openPrs = () => {
+  const prs = JSON.parse(
     execFileSync(
       'gh',
       [
@@ -39,11 +42,20 @@ const openPrs = () =>
         'open',
         '--json',
         'number,title,updatedAt,isDraft,headRefName',
+        '--limit',
+        String(LIMIT),
         ...(repo ? ['--repo', repo] : []),
       ],
       { encoding: 'utf8', timeout: 30_000 },
     ),
   );
+  if (prs.length >= LIMIT)
+    report(
+      `${LIMIT}+ open PRs: the list is truncated, so stalls past it are unchecked`,
+      [],
+    );
+  return prs;
+};
 
 const laneTable = () => {
   try {

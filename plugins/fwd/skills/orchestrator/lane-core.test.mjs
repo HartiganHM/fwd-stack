@@ -63,3 +63,8 @@ test('busy lanes rotate past 300k; while the user is away they run to 450k', () 
   assert.equal(verdict(null), 'no turns yet');
   assert.match(verdict(200_000, { rotateAt: 150_000 }), /rotate/);
 });
+
+test('a relative or trailing-slash project path names the same transcript folder', () => {
+  assert.equal(projectDirName('.'), projectDirName(process.cwd()));
+  assert.equal(projectDirName('/a/b/'), projectDirName('/a/b'));
+});

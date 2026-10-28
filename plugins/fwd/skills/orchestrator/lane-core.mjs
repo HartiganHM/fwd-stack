@@ -4,8 +4,14 @@
 // cache reads plus cache writes. Per-turn context size, not session length, drives cost, so this
 // is the number a lane is rotated on.
 
-/** Claude Code's folder name for a project's transcripts: every non-alphanumeric becomes `-`. */
-export const projectDirName = (path) => path.replace(/[^A-Za-z0-9]/g, '-');
+import { resolve } from 'node:path';
+
+/**
+ * Claude Code's folder name for a project's transcripts: every non-alphanumeric of the ABSOLUTE
+ * path becomes `-`. Resolved first, so `.` or a trailing slash names the same folder as the cwd.
+ */
+export const projectDirName = (path) =>
+  resolve(path).replace(/[^A-Za-z0-9]/g, '-');
 
 export function sessionSummary(jsonl) {
   let name = null;
