@@ -7,18 +7,19 @@ set -euo pipefail
 CFG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 BACKUP="${1:-$(cat "$CFG/backups/fwd-switchover-last" 2>/dev/null || true)}"
 [ -n "$BACKUP" ] && [ -d "$BACKUP" ] || { echo "no backup found (looked for ${BACKUP:-<none recorded>})"; exit 1; }
+# switch.sh writes the state file last, so a backup without one was interrupted and is incomplete.
+[ -f "$BACKUP/state" ] || { echo "$BACKUP has no state file (an interrupted backup); refusing to use it. Nothing changed."; exit 1; }
 echo "== rolling back from $BACKUP"
-WAS_INSTALLED=0
-WAS_LINK=""
-CLAUDE_MD="$CFG/CLAUDE.md"
+PREV_PATH=""
 # shellcheck disable=SC1091
-[ -f "$BACKUP/state" ] && . "$BACKUP/state"
+. "$BACKUP/state"
 
 [ -f "$BACKUP/settings.json" ] && cp -p "$BACKUP/settings.json" "$CFG/settings.json"
 # Written through any symlink: `cp` onto a link writes its target, so a dotfiles link survives.
 [ -f "$BACKUP/CLAUDE.md" ] && cp "$BACKUP/CLAUDE.md" "$CLAUDE_MD"
 for d in "$BACKUP"/skills/*; do
-  [ -e "$d" ] || continue
+  # -L too: a relative skill symlink dangles inside the backup but resolves once restored.
+  [ -e "$d" ] || [ -L "$d" ] || continue
   rm -rf "$CFG/skills/$(basename "$d")"
   mkdir -p "$CFG/skills"
   cp -Rp "$d" "$CFG/skills/"
@@ -32,5 +33,12 @@ if [ "$WAS_INSTALLED" != 1 ]; then
   claude plugin uninstall fwd@fwd-stack --scope user >/dev/null 2>&1 || true
   echo "== rolled back; the plugin is uninstalled (it was not installed before)."
 else
-  echo "== rolled back; the plugin stays installed (it was installed before)."
+  # Put the previous install back exactly: its cached copy and the install record that points at it.
+  if [ -n "$PREV_PATH" ] && [ -d "$BACKUP/plugin-copy" ] && [ -f "$BACKUP/installed_plugins.json" ]; then
+    rm -rf "$PREV_PATH"
+    mkdir -p "$(dirname "$PREV_PATH")"
+    cp -Rp "$BACKUP/plugin-copy" "$PREV_PATH"
+    cp -p "$BACKUP/installed_plugins.json" "$CFG/plugins/installed_plugins.json"
+  fi
+  echo "== rolled back; the previous plugin install is restored."
 fi

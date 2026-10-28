@@ -32,12 +32,26 @@ run() {
   echo "+ $*"
   [ $DRY -eq 1 ] || eval "$@"
 }
+# The installed copy's path, empty when not installed. Exits non-zero when the listing itself cannot
+# be read: "unknown" must never be taken for "not installed", or a rollback would uninstall a plugin
+# that was there before.
 installed_path() {
-  claude plugin list --json 2>/dev/null |
-    node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{const p=JSON.parse(s).find(x=>x.id==="fwd@fwd-stack");process.stdout.write(p?p.installPath:"")}catch{}})'
+  local out
+  out=$(claude plugin list --json 2>/dev/null) || return 1
+  node -e 'const p=JSON.parse(process.argv[1]).find(x=>x.id==="fwd@fwd-stack");process.stdout.write(p?p.installPath:"")' "$out"
 }
 
 echo "== fwd switchover ($([ $DRY -eq 1 ] && echo DRY RUN || echo APPLY)), backup: $BACKUP"
+
+# 0. Preconditions, checked before anything changes.
+if [ -e "$LINK" ] && [ ! -L "$LINK" ]; then
+  echo "$LINK exists and is not a symlink; move it aside first. Nothing changed."
+  exit 1
+fi
+if ! PREV_PATH=$(installed_path); then
+  echo "could not read 'claude plugin list --json'; not changing anything without knowing what is installed."
+  exit 1
+fi
 
 # 1. Back up everything this touches, and record what was there before, so a rollback restores it.
 run "mkdir -p '$BACKUP/skills'"
@@ -46,14 +60,22 @@ for f in settings.json; do
 done
 [ -f "$CLAUDE_MD" ] && run "cp -p '$CLAUDE_MD' '$BACKUP/CLAUDE.md'"
 for s in "${FWD_SKILLS[@]}"; do
-  [ -e "$CFG/skills/$s" ] && run "cp -Rp '$CFG/skills/$s' '$BACKUP/skills/$s'"
+  # -L too: a skill that is a symlink (dangling or not) is still a copy to back up and retire.
+  { [ -e "$CFG/skills/$s" ] || [ -L "$CFG/skills/$s" ]; } && run "cp -Rp '$CFG/skills/$s' '$BACKUP/skills/$s'"
 done
 [ -d "$CFG/hooks" ] && run "cp -Rp '$CFG/hooks' '$BACKUP/hooks'"
 [ -d "$CFG/lib" ] && run "cp -Rp '$CFG/lib' '$BACKUP/lib'"
-WAS_INSTALLED=$([ -n "$(installed_path)" ] && echo 1 || echo 0)
+WAS_INSTALLED=$([ -n "$PREV_PATH" ] && echo 1 || echo 0)
 WAS_LINK=$([ -L "$LINK" ] && readlink "$LINK" || echo "")
+# An existing install is backed up whole (its cached copy and the install record), so a failed
+# update can be put back exactly; Claude Code has no command to install an older version.
+if [ "$WAS_INSTALLED" = 1 ]; then
+  run "cp -Rp '$PREV_PATH' '$BACKUP/plugin-copy'"
+  run "cp -p '$CFG/plugins/installed_plugins.json' '$BACKUP/installed_plugins.json'"
+fi
 if [ $DRY -eq 0 ]; then
-  printf 'WAS_INSTALLED=%s\nWAS_LINK=%q\nCLAUDE_MD=%q\n' "$WAS_INSTALLED" "$WAS_LINK" "$CLAUDE_MD" >"$BACKUP/state"
+  # Written last: rollback.sh refuses a backup without it, so an interrupted backup is never used.
+  printf 'WAS_INSTALLED=%s\nWAS_LINK=%q\nCLAUDE_MD=%q\nPREV_PATH=%q\n' "$WAS_INSTALLED" "$WAS_LINK" "$CLAUDE_MD" "$PREV_PATH" >"$BACKUP/state"
   echo "$BACKUP" >"$CFG/backups/fwd-switchover-last"
   # From here, any failure rolls back to this backup.
   trap 'echo "!! step failed: rolling back from $BACKUP"; "$HERE/rollback.sh" "$BACKUP"; exit 1' ERR
@@ -91,7 +113,7 @@ fi
 
 # 6. Retire the duplicate user-scope skills (the plugin ships them), and the old hook copies.
 for s in "${FWD_SKILLS[@]}"; do
-  [ -e "$CFG/skills/$s" ] && run "rm -rf '$CFG/skills/$s'"
+  { [ -e "$CFG/skills/$s" ] || [ -L "$CFG/skills/$s" ]; } && run "rm -rf '$CFG/skills/$s'"
 done
 for f in autonomous-guard.mjs neon-guard.mjs neon-prod-guard.mjs session-budget.mjs; do
   [ -e "$CFG/hooks/$f" ] && run "rm -f '$CFG/hooks/$f'"

@@ -9,6 +9,7 @@ PATTERNS = (
     "skills/pr-review/gate-hook.sh",
     "hooks/neon-prod-guard.mjs",
     "hooks/autonomous-guard.mjs",
+    "hooks/session-budget.mjs",
 )
 
 path = sys.argv[1]

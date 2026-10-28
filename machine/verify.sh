@@ -17,7 +17,7 @@ check "plugin fwd@fwd-stack installed and enabled" '[ "$STATE" = enabled ]'
 check "stable path points at the installed copy" '[ -n "$ROOT" ] && [ "$(cd "$LINK" && pwd -P)" = "$(cd "$ROOT" && pwd -P)" ]'
 check "installed copy registers its hooks" 'grep -q "gate-hook.sh" "$ROOT/hooks/hooks.json" && grep -q "neon-prod-guard" "$ROOT/hooks/hooks.json" && grep -q "autonomous-guard" "$ROOT/hooks/hooks.json"'
 check "settings.json is valid JSON" '[ ! -f "$CFG/settings.json" ] || python3 -c "import json,sys;json.load(open(sys.argv[1]))" "$CFG/settings.json"'
-check "no user-scope copies of the plugin's hooks remain" '[ ! -f "$CFG/settings.json" ] || ! grep -qE "skills/pr-review/gate-hook|hooks/neon-prod-guard|hooks/autonomous-guard\.mjs" "$CFG/settings.json"'
+check "no user-scope copies of the plugin's hooks remain" '[ ! -f "$CFG/settings.json" ] || ! grep -qE "skills/pr-review/gate-hook|hooks/neon-prod-guard|hooks/autonomous-guard\.mjs|hooks/session-budget\.mjs" "$CFG/settings.json"'
 # Only a machine that had a ledger beside the old skill has one to carry.
 LAST=$(cat "$CFG/backups/fwd-switchover-last" 2>/dev/null || true)
 check "pre-open ledger carried over (when there was one)" '[ ! -f "$LAST/skills/pr-review/precheck-ledger.json" ] || [ -f "$CFG/plugins/data/fwd-fwd-stack/precheck-ledger.json" ]'
