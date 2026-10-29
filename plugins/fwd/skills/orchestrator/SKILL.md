@@ -115,7 +115,13 @@ nothing was watching.
 - **While the user is present,** never wait in the foreground: it holds the turn, and their
   messages queue behind it. **Overnight,** a bounded foreground loop (under 10 minutes) is fine
   and saves autonomous-guard continuations.
-- Arm the autonomous-run guard when the user leaves. Disarm it when they return.
+- **When the user leaves,** open the away window for as long as they will be gone, and arm the
+  autonomous-run guard to cover all of it:
+  `node "${CLAUDE_PLUGIN_ROOT}/lib/away.mjs" set 10`, then `autonomous-guard.mjs arm … --minutes=600
+--max=200`. The default guard (120 minutes, 40 continuations) runs out partway through a night. Tell
+  every lane the window is open; each lane arms its own guard for the same span.
+- **When the user returns,** clear the window (`away.mjs clear`), disarm the guard, and list the
+  rotation candidates (below).
 
 ## 7 · Measure context and rotate lanes
 
@@ -123,14 +129,16 @@ Per-turn context, not session length, drives cost: every turn re-reads the whole
 
 - Ask each lane for its context size at the start of every task (the brief's first reply). Check
   every lane at each watchdog wake and at each PR boundary:
-  `node "${CLAUDE_PLUGIN_ROOT}/skills/orchestrator/lane-context.mjs"` (add `--away` when the user is
-  away).
+  `node "${CLAUDE_PLUGIN_ROOT}/skills/orchestrator/lane-context.mjs"`. It reads the away window
+  itself, as does the session-budget hook, so no lane depends on remembering a flag.
 - **Rotate at a PR boundary** past `rotateAt`, or when a lane's context has bloated across many PRs.
   The lane writes a handoff and gives the user a labelled restart prompt. An idle lane over the line
   rotates now. A lane with no ranked work closes, and gets no prompt.
-- **While the user is away,** a lane over `rotateAt` keeps working with tight reads. At `awayAt` it
-  stops at its next PR boundary with its handoff written. List rotation candidates for the user's
-  return: they restart sessions, often several at once before an overnight run.
+- **While the user is away, no lane stops for context.** The away window is the only switch:
+  `rotateAt` applies while they are here. A lane over `rotateAt` keeps working with
+  lean turns and writes its handoff at each PR boundary, so a restart can pick up from any of them.
+  Rotation waits for the user's return: list the candidates then, and they restart sessions, often
+  several at once before an overnight run.
 - Keep at most `maxOpusLanes` Opus lanes. Put build lanes on Sonnet where the work allows.
 
 ## 8 · Spend is scrutinised before it is asked for

@@ -17,8 +17,8 @@ orchestrator itself never builds.
 
 **First, read the project's own rules.** If `.claude/fwd/run-project.md` exists in the project, read
 it before anything else. Its rules add to these and win where they conflict. Settings live under
-`orchestrator` in `.claude/fwd.json`: `maxLanes` (default 3), `rotateAt` (300000), `awayAt`
-(450000), `maxOpusLanes` (2) and `priorities` (`boards/priorities.md`).
+`orchestrator` in `.claude/fwd.json`: `maxLanes` (default 3), `rotateAt` (450000),
+`maxOpusLanes` (2) and `priorities` (`boards/priorities.md`).
 
 ## 1 · Lane or subagent: decide by the shape of the work
 
@@ -58,7 +58,8 @@ Every lane and subagent pays for the project's agent docs at start. Keep `AGENTS
    measure each lane's context. Rotate any lane over `rotateAt` before giving it new work.
 3. For each ranked item the user has approved, decide its shape (§1). Write a brief (§3) for each
    lane item, and dispatch subagents for the rest.
-4. Arm the stall watchdog (`orchestrator` §6). When the user leaves, arm the autonomous-run guard.
+4. Arm the stall watchdog (`orchestrator` §6). When the user leaves, open the away window and arm the
+   autonomous-run guard for its whole span (`orchestrator` §6).
 
 ## 3 · The lane brief
 

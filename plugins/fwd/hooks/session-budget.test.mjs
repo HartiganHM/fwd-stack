@@ -16,7 +16,7 @@ import {
 const L = lines({});
 
 test('the lines default to 150k and rotateAt, and follow the config', () => {
-  assert.deepEqual(L, { warn: 150_000, critical: 300_000 });
+  assert.deepEqual(L, { warn: 150_000, critical: 450_000 });
   assert.deepEqual(
     lines({
       sessionBudget: { warnTokens: 80_000 },
@@ -39,12 +39,12 @@ test('quiet below the warning line, then a warning, then critical', () => {
   assert.equal(budgetMessage(null, L), null);
   assert.equal(budgetMessage(149_999, L), null);
   assert.match(budgetMessage(150_000, L), /WARNING.*~150k/);
-  assert.match(budgetMessage(312_000, L), /CRITICAL.*~312k.*rotate/);
+  assert.match(budgetMessage(462_000, L), /CRITICAL.*~462k.*rotate/);
 });
 
 test('bands: one for the warning, one for critical, then one per 100k past it', () => {
   assert.deepEqual(
-    [0, 149_999, 150_000, 299_999, 300_000, 399_999, 400_000, 780_000].map(
+    [0, 149_999, 150_000, 449_999, 450_000, 549_999, 550_000, 930_000].map(
       (c) => band(c, L),
     ),
     [0, 0, 1, 1, 2, 2, 3, 6],
@@ -124,4 +124,24 @@ test('context is the last main-session turn, read from the tail', () => {
     250_020,
     'a subagent turn does not count; a big tool result is read past',
   );
+});
+
+test('while the user is away the critical line says keep working, never rotate', () => {
+  const m = budgetMessage(500_000, { warn: 150_000, critical: 450_000 }, true);
+  assert.match(m, /USER AWAY/);
+  assert.match(m, /keep working/);
+  assert.doesNotMatch(m, /ask the orchestrator to rotate/);
+  assert.match(
+    budgetMessage(500_000, { warn: 150_000, critical: 450_000 }),
+    /CRITICAL/,
+  );
+});
+
+test('switching between away and present announces the band again', () => {
+  const env = { CLAUDE_PLUGIN_DATA: mkdtempSync(join(tmpdir(), 'budget-')) };
+  assert.equal(crossed('m', 2, 10, env), true);
+  assert.equal(crossed('m', 2, 11, env, true), true, 'present to away');
+  assert.equal(crossed('m', 2, 12, env, true), false);
+  assert.equal(crossed('m', 2, 13, env), true, 'away back to present');
+  assert.equal(crossed('m', 2, 14, env), false);
 });
