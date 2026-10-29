@@ -90,18 +90,20 @@ const before = requestCount();
 // Anything left that the user must restore by hand, reported at the end whatever the outcome.
 const unrestored = [];
 
-// Nothing has changed yet, so a failed cancel just stops.
-const cancelled = JSON.parse(
-  graphql(
-    `mutation{requestReviews(input:{pullRequestId:"${id}", botIds:[], userIds:[], union:false}){pullRequest{reviewRequests{totalCount}}}}`,
-  ),
-);
-const left =
-  cancelled.data?.requestReviews?.pullRequest?.reviewRequests?.totalCount;
+// A failed response does not prove the cancel did not land, so the restore below runs either way:
+// re-requesting reviewers who are still requested is harmless.
+let left;
+attempt('cancel', () => {
+  left = JSON.parse(
+    graphql(
+      `mutation{requestReviews(input:{pullRequestId:"${id}", botIds:[], userIds:[], union:false}){pullRequest{reviewRequests{totalCount}}}}`,
+    ),
+  ).data?.requestReviews?.pullRequest?.reviewRequests?.totalCount;
+});
 console.log(
   left === 0
     ? 'cancelled the review request'
-    : `cancel sent, but ${left ?? 'an unknown number of'} request(s) remain; continuing`,
+    : `cancel outcome unknown or incomplete (${left ?? 'no count'} request(s) remain); continuing`,
 );
 
 // The toggle is what ends the stuck run. A PR that is already a draft is left as one.
@@ -166,6 +168,11 @@ try {
       break;
     }
     await new Promise((r) => setTimeout(r, 15_000));
+  }
+  // One last read at the deadline, so a request registered during the final sleep still counts.
+  if (!attached) {
+    after = requestCount();
+    attached = after > before;
   }
   console.log(
     attached
