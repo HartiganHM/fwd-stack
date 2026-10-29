@@ -113,15 +113,29 @@ if (!prData.draft) {
       `mutation{convertPullRequestToDraft(input:{pullRequestId:"${id}"}){clientMutationId}}`,
     ),
   );
-  if (drafted) {
-    const ready = () =>
-      graphql(
-        `mutation{markPullRequestReadyForReview(input:{pullRequestId:"${id}"}){clientMutationId}}`,
-      );
-    if (attempt('mark ready', ready) || attempt('mark ready (retry)', ready))
-      console.log('toggled draft and back to ready');
-    else unrestored.push('the PR is still a draft: mark it ready for review');
-  }
+  // A failed response does not prove the conversion did not land, so the PR is put back to ready
+  // either way, and its real state is read back rather than inferred from either call.
+  attempt('mark ready', () =>
+    graphql(
+      `mutation{markPullRequestReadyForReview(input:{pullRequestId:"${id}"}){clientMutationId}}`,
+    ),
+  );
+  let isDraft = null;
+  attempt('read draft state', () => {
+    isDraft = JSON.parse(gh(['api', `repos/${repo}/pulls/${pr}`])).draft;
+  });
+  if (isDraft === false)
+    console.log(
+      drafted
+        ? 'toggled draft and back to ready'
+        : 'the draft toggle failed, so a run in progress may not have ended',
+    );
+  else
+    unrestored.push(
+      isDraft
+        ? 'the PR is still a draft: mark it ready for review'
+        : 'could not confirm the PR is out of draft: check it',
+    );
 } else {
   console.log(
     'PR is a draft: skipped the toggle, so a run in progress may not have ended',
