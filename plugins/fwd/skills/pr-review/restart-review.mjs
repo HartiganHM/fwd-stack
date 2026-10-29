@@ -35,19 +35,30 @@ const gh = (ghArgs, input) =>
     maxBuffer: 64 * 1024 * 1024,
   });
 const graphql = (query) => gh(['api', 'graphql', '-f', `query=${query}`]);
+// Copilot's requests only: the people put back alongside it add events of their own, which would
+// read as a successful attach when Copilot's had silently failed.
 const requestCount = () =>
-  Number(
-    gh([
-      'api',
-      `repos/${repo}/issues/${pr}/timeline`,
-      '--paginate',
-      '--jq',
-      '[.[]|select(.event=="review_requested")]|length',
-    ])
-      .trim()
-      .split('\n')
-      .reduce((sum, n) => sum + Number(n || 0), 0),
-  );
+  gh([
+    'api',
+    `repos/${repo}/issues/${pr}/timeline`,
+    '--paginate',
+    '--jq',
+    '[.[]|select(.event=="review_requested" and ((.requested_reviewer.login // "")|test("copilot";"i")))]|length',
+  ])
+    .trim()
+    .split('\n')
+    .reduce((sum, n) => sum + Number(n || 0), 0);
+const attempt = (label, fn) => {
+  try {
+    fn();
+    return true;
+  } catch (error) {
+    console.log(
+      `${label} failed: ${String(error.stderr || error.message).trim()}`,
+    );
+    return false;
+  }
+};
 
 // The gate's own re-request verdict comes first: a restart is a re-request, and every rule that
 // forbids one (bar met, hard stop, unpushed head) forbids this too.
@@ -68,56 +79,94 @@ try {
 
 const prData = JSON.parse(gh(['api', `repos/${repo}/pulls/${pr}`]));
 const id = prData.node_id;
-// The cancel clears every requested reviewer, people included, so the people are put back with Copilot.
-const people = JSON.parse(
+// The cancel clears every requested reviewer, people and teams included, so they are put back with
+// Copilot. (REST omits bots from this list, which is why Copilot is added by name.)
+const requested = JSON.parse(
   gh(['api', `repos/${repo}/pulls/${pr}/requested_reviewers`]),
-).users.map((u) => u.login);
-const before = requestCount();
-
-graphql(
-  `mutation{requestReviews(input:{pullRequestId:"${id}", botIds:[], userIds:[], union:false}){clientMutationId}}`,
 );
-console.log('cancelled the review request');
+const people = requested.users.map((u) => u.login);
+const teams = requested.teams.map((t) => t.slug);
+const before = requestCount();
+// Anything left that the user must restore by hand, reported at the end whatever the outcome.
+const unrestored = [];
+
+// Nothing has changed yet, so a failed cancel just stops.
+const cancelled = JSON.parse(
+  graphql(
+    `mutation{requestReviews(input:{pullRequestId:"${id}", botIds:[], userIds:[], union:false}){pullRequest{reviewRequests{totalCount}}}}`,
+  ),
+);
+const left =
+  cancelled.data?.requestReviews?.pullRequest?.reviewRequests?.totalCount;
+console.log(
+  left === 0
+    ? 'cancelled the review request'
+    : `cancel sent, but ${left ?? 'an unknown number of'} request(s) remain; continuing`,
+);
 
 // The toggle is what ends the stuck run. A PR that is already a draft is left as one.
 if (!prData.draft) {
-  graphql(
-    `mutation{convertPullRequestToDraft(input:{pullRequestId:"${id}"}){clientMutationId}}`,
+  const drafted = attempt('convert to draft', () =>
+    graphql(
+      `mutation{convertPullRequestToDraft(input:{pullRequestId:"${id}"}){clientMutationId}}`,
+    ),
   );
-  graphql(
-    `mutation{markPullRequestReadyForReview(input:{pullRequestId:"${id}"}){clientMutationId}}`,
-  );
-  console.log('toggled draft and back to ready');
+  if (drafted) {
+    const ready = () =>
+      graphql(
+        `mutation{markPullRequestReadyForReview(input:{pullRequestId:"${id}"}){clientMutationId}}`,
+      );
+    if (attempt('mark ready', ready) || attempt('mark ready (retry)', ready))
+      console.log('toggled draft and back to ready');
+    else unrestored.push('the PR is still a draft: mark it ready for review');
+  }
 } else {
   console.log(
     'PR is a draft: skipped the toggle, so a run in progress may not have ended',
   );
 }
 
-gh(
-  [
-    'api',
-    '-X',
-    'POST',
-    `repos/${repo}/pulls/${pr}/requested_reviewers`,
-    '--input',
-    '-',
-  ],
-  JSON.stringify({ reviewers: [COPILOT, ...people] }),
-);
+// One stale login makes GitHub reject the whole POST, so on failure Copilot is attached alone and
+// the others are reported. Either way the timeline decides, not the response (§1).
+const post = (body) => () =>
+  gh(
+    [
+      'api',
+      '-X',
+      'POST',
+      `repos/${repo}/pulls/${pr}/requested_reviewers`,
+      '--input',
+      '-',
+    ],
+    JSON.stringify(body),
+  );
+const others = people.length + teams.length > 0;
+if (
+  !attempt(
+    'attach',
+    post({ reviewers: [COPILOT, ...people], team_reviewers: teams }),
+  ) &&
+  others
+) {
+  attempt('attach Copilot alone', post({ reviewers: [COPILOT] }));
+  unrestored.push(
+    `re-request these reviewers: ${[...people, ...teams.map((t) => `team ${t}`)].join(', ')}`,
+  );
+}
 
-// The POST's response proves nothing (§1); the timeline does. Allow two minutes.
+let attached = false;
 const deadline = Date.now() + 120_000;
 while (Date.now() < deadline) {
   if (requestCount() > before) {
-    console.log(
-      `re-attached: review_requested events ${before} -> ${requestCount()}`,
-    );
-    process.exit(0);
+    attached = true;
+    break;
   }
   await new Promise((r) => setTimeout(r, 15_000));
 }
 console.log(
-  `no new review_requested event after 2 minutes (still ${before}). Hand it to the user to attach Copilot from the Reviewers gear (§1).`,
+  attached
+    ? `re-attached: Copilot review_requested events ${before} -> ${requestCount()}`
+    : `no new Copilot review_requested event after 2 minutes (still ${before}). Hand it to the user to attach Copilot from the Reviewers gear (§1).`,
 );
-process.exit(1);
+for (const line of unrestored) console.log(`NOT RESTORED: ${line}`);
+process.exit(attached && unrestored.length === 0 ? 0 : 1);

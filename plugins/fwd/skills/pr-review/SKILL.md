@@ -149,10 +149,14 @@ gh api repos/OWNER/REPO/issues/N/timeline --paginate \
   `review_requested` count stops rising however often you POST, and
   `DELETE requested_reviewers` does not remove the bot. Restart it with
   `node <skill dir>/restart-review.mjs <pr> --repo owner/name`. The script runs
-  the gate's re-request check first, then cancels the request, toggles the PR to
-  draft and back (which ends the run), re-attaches Copilot along with any people
-  who were requested, and confirms on the timeline. Only when that confirmation
-  fails does it go to the user.
+  the gate's re-request check first and changes nothing if the gate refuses.
+  Otherwise it cancels the request, toggles the PR to draft and back (which ends
+  the run; a PR that is already a draft is left alone, so its run may survive),
+  re-attaches Copilot along with any people and teams who were requested, and
+  confirms on Copilot's timeline events. It exits 0 only when Copilot's attach
+  is confirmed and everything was restored. Otherwise it prints `NOT RESTORED:`
+  lines for what you must fix by hand. When the attach itself is not confirmed,
+  hand the PR to the user.
 - GraphQL `requestReviews` used to be the fallback. As of 2026-09-07 it 404s
   (`Could not resolve to User node…`, with the correct `botIds:` field) while
   plain REST works. **The hook denies it:** the mutation names the PR by node id,
