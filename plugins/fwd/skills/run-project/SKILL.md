@@ -17,8 +17,8 @@ orchestrator itself never builds.
 
 **First, read the project's own rules.** If `.claude/fwd/run-project.md` exists in the project, read
 it before anything else. Its rules add to these and win where they conflict. Settings live under
-`orchestrator` in `.claude/fwd.json`: `maxLanes` (default 3), `rotateAt` (300000), `awayAt`
-(450000), `maxOpusLanes` (2) and `priorities` (`boards/priorities.md`).
+`orchestrator` in `.claude/fwd.json`: `maxLanes` (default 3), `rotateAt` (300000),
+`maxOpusLanes` (2) and `priorities` (`boards/priorities.md`).
 
 ## 1 · Lane or subagent: decide by the shape of the work
 

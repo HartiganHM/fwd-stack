@@ -128,9 +128,10 @@ Per-turn context, not session length, drives cost: every turn re-reads the whole
 - **Rotate at a PR boundary** past `rotateAt`, or when a lane's context has bloated across many PRs.
   The lane writes a handoff and gives the user a labelled restart prompt. An idle lane over the line
   rotates now. A lane with no ranked work closes, and gets no prompt.
-- **While the user is away,** a lane over `rotateAt` keeps working with tight reads. At `awayAt` it
-  stops at its next PR boundary with its handoff written. List rotation candidates for the user's
-  return: they restart sessions, often several at once before an overnight run.
+- **While the user is away, no lane stops for context.** A lane over `rotateAt` keeps working with
+  lean turns and writes its handoff at each PR boundary, so a restart can pick up from any of them.
+  Rotation waits for the user's return: list the candidates then, and they restart sessions, often
+  several at once before an overnight run.
 - Keep at most `maxOpusLanes` Opus lanes. Put build lanes on Sonnet where the work allows.
 
 ## 8 · Spend is scrutinised before it is asked for

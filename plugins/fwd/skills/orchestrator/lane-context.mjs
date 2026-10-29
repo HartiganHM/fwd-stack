@@ -5,8 +5,8 @@
 //
 //   node lane-context.mjs [--project <dir>] [--active <minutes>] [--away] [--json]
 //
-// Thresholds come from `orchestrator.rotateAt` and `orchestrator.awayAt` in fwd.json
-// (default 300k and 450k tokens).
+// Thresholds come from `orchestrator.rotateAt` in fwd.json
+// (default 300k tokens).
 import { openSync, readSync, closeSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';

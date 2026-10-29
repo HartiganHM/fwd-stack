@@ -61,12 +61,16 @@ test("a subagent's turns in the same transcript do not count", () => {
   assert.equal(sessionSummary(jsonl).context, 50_000);
 });
 
-test('busy lanes rotate past 300k; while the user is away they run to 450k', () => {
+test('busy lanes rotate past 300k; while the user is away they never stop for context', () => {
   assert.equal(verdict(299_999), 'ok');
   assert.match(verdict(300_000), /rotate/);
   assert.equal(verdict(299_999, { away: true }), 'ok');
-  assert.match(verdict(400_000, { away: true }), /reads tight/);
-  assert.match(verdict(450_000, { away: true }), /away line: stop/);
+  assert.match(verdict(400_000, { away: true }), /turns lean/);
+  assert.match(
+    verdict(900_000, { away: true }),
+    /keep working.*rotate on return/,
+  );
+  assert.doesNotMatch(verdict(900_000, { away: true }), /stop/);
   assert.equal(verdict(null), 'no turns yet');
   assert.match(verdict(200_000, { rotateAt: 150_000 }), /rotate/);
 });

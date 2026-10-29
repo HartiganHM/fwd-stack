@@ -59,20 +59,16 @@ export function laneName(tailSummary, headSummary = {}) {
 
 /**
  * What to do about a lane. Busy lanes over `rotateAt` rotate at their next PR boundary. While the
- * user is away a lane over `rotateAt` keeps working with tight reads, because a rotation nobody is
- * there to restart leaves work sitting; at `awayAt` it stops at its next PR boundary with a handoff
- * written, and the rotation waits for the user.
+ * user is away no lane stops for context: a rotation nobody is there to restart leaves work
+ * sitting. A lane over `rotateAt` keeps working with lean turns and writes a handoff at each PR
+ * boundary, and the rotation waits for the user's return.
  */
-export function verdict(
-  context,
-  { rotateAt = 300_000, awayAt = 450_000, away = false } = {},
-) {
+export function verdict(context, { rotateAt = 300_000, away = false } = {}) {
   if (context === null) return 'no turns yet';
   if (away) {
-    if (context >= awayAt)
-      return 'over the away line: stop at its next PR boundary, handoff written';
-    if (context >= rotateAt) return 'over rotateAt: keep working, reads tight';
-    return 'ok';
+    return context >= rotateAt
+      ? 'over rotateAt: keep working, turns lean, handoff at each PR boundary; rotate on return'
+      : 'ok';
   }
   return context >= rotateAt ? 'rotate at its next PR boundary' : 'ok';
 }
