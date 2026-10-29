@@ -136,3 +136,12 @@ test('while the user is away the critical line says keep working, never rotate',
     /CRITICAL/,
   );
 });
+
+test('switching between away and present announces the band again', () => {
+  const env = { CLAUDE_PLUGIN_DATA: mkdtempSync(join(tmpdir(), 'budget-')) };
+  assert.equal(crossed('m', 2, 10, env), true);
+  assert.equal(crossed('m', 2, 11, env, true), true, 'present to away');
+  assert.equal(crossed('m', 2, 12, env, true), false);
+  assert.equal(crossed('m', 2, 13, env), true, 'away back to present');
+  assert.equal(crossed('m', 2, 14, env), false);
+});

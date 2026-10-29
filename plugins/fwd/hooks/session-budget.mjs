@@ -82,11 +82,19 @@ export function lastContext(path) {
 // holds the transcript's size when it was written, and a drop removes only markers written from a
 // shorter transcript than its own reading: a delayed hook holding an older reading cannot undo a
 // newer one. The transcript only grows (compaction appends), so its size orders the readings.
-const stateDir = (sessionId, env) =>
-  join(pluginDataDir(env), 'session-budget', sessionId.replace(/[^\w-]/g, '_'));
+// Away and present keep separate markers, because the message for a band differs between them. A
+// session announced a band in one mode is told again when the mode changes, and switching mode
+// drops the other mode's markers, so switching back announces afresh too.
+const stateDir = (sessionId, env, away = false) =>
+  join(
+    pluginDataDir(env),
+    'session-budget',
+    sessionId.replace(/[^\w-]/g, '_') + (away ? '.away' : ''),
+  );
 
-export function crossed(sessionId, now, seen, env = process.env) {
-  const dir = stateDir(sessionId, env);
+export function crossed(sessionId, now, seen, env = process.env, away = false) {
+  rmSync(stateDir(sessionId, env, !away), { recursive: true, force: true });
+  const dir = stateDir(sessionId, env, away);
   mkdirSync(dir, { recursive: true });
   for (const f of readdirSync(dir)) {
     if (!(Number(f) > now)) continue;
@@ -124,12 +132,13 @@ if (isMain(import.meta.url)) {
     process.exit(0);
   }
   const l = lines(loadConfig());
-  const message = budgetMessage(context, l, awayUntil() !== null);
+  const away = awayUntil() !== null;
+  const message = budgetMessage(context, l, away);
   if (payload.hook_event_name === 'PostToolUse') {
     // Recorded below the warning line too, so a session compacted back under it warns again.
     if (
       !payload.session_id ||
-      !crossed(payload.session_id, band(context, l), size)
+      !crossed(payload.session_id, band(context, l), size, process.env, away)
     )
       process.exit(0);
     console.log(

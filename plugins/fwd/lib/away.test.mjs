@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -29,4 +29,12 @@ test('clearing the window marks the user present', () => {
 test('a window needs a positive length', () => {
   assert.throws(() => setAway(0, env()), /positive/);
   assert.throws(() => setAway(Number('x'), env()), /positive/);
+});
+
+test('extending a window replaces it and leaves no temporary file behind', () => {
+  const e = env();
+  setAway(1, e, 0);
+  const until = setAway(10, e, 0);
+  assert.equal(awayUntil(e, 1), until);
+  assert.deepEqual(readdirSync(e.CLAUDE_PLUGIN_DATA), ['away.json']);
 });

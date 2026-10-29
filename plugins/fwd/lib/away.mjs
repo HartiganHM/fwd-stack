@@ -7,7 +7,13 @@
 //   node away.mjs set <hours>   open a window from now
 //   node away.mjs clear         the user is back
 //   node away.mjs status        print the window, or "present"
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 
 import { isMain } from './is-main.mjs';
@@ -28,7 +34,11 @@ export function setAway(hours, env = process.env, now = Date.now()) {
   if (!(hours > 0)) throw new Error('hours must be a positive number');
   mkdirSync(pluginDataDir(env), { recursive: true });
   const until = now + hours * 3_600_000;
-  writeFileSync(file(env), JSON.stringify({ until }));
+  // Written aside and renamed into place: a hook reading mid-write sees the old window or the new
+  // one, never a truncated file that would read as present.
+  const tmp = `${file(env)}.${process.pid}.${Date.now()}.tmp`;
+  writeFileSync(tmp, JSON.stringify({ until }));
+  renameSync(tmp, file(env));
   return until;
 }
 
