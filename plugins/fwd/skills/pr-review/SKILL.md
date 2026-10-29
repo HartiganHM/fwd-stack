@@ -144,6 +144,15 @@ gh api repos/OWNER/REPO/issues/N/timeline --paginate \
   to the user to attach via the UI reviewers gear. Do not keep polling, and do
   not merge on a self-invented fallback. Also ask whether the PR is simply done:
   nine rounds usually means the answer is yes.
+- **A wedged run is a third case, and you restart it yourself.** A run that
+  started and never finished swallows every later request: the timeline's
+  `review_requested` count stops rising however often you POST, and
+  `DELETE requested_reviewers` does not remove the bot. Restart it with
+  `node <skill dir>/restart-review.mjs <pr> --repo owner/name`. The script runs
+  the gate's re-request check first, then cancels the request, toggles the PR to
+  draft and back (which ends the run), re-attaches Copilot along with any people
+  who were requested, and confirms on the timeline. Only when that confirmation
+  fails does it go to the user.
 - GraphQL `requestReviews` used to be the fallback. As of 2026-09-07 it 404s
   (`Could not resolve to User node…`, with the correct `botIds:` field) while
   plain REST works. **The hook denies it:** the mutation names the PR by node id,
