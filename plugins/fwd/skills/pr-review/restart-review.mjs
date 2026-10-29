@@ -43,7 +43,7 @@ const requestCount = () =>
     `repos/${repo}/issues/${pr}/timeline`,
     '--paginate',
     '--jq',
-    '[.[]|select(.event=="review_requested" and ((.requested_reviewer.login // "")|test("copilot";"i")))]|length',
+    '[.[]|select(.event=="review_requested" and (.requested_reviewer.type == "Bot" and ((.requested_reviewer.login // "")|test("copilot";"i"))))]|length',
   ])
     .trim()
     .split('\n')
@@ -154,19 +154,29 @@ if (
   );
 }
 
+// A timeline read that fails here must not swallow the NOT RESTORED report, so it always prints.
 let attached = false;
-const deadline = Date.now() + 120_000;
-while (Date.now() < deadline) {
-  if (requestCount() > before) {
-    attached = true;
-    break;
+let after = before;
+try {
+  const deadline = Date.now() + 120_000;
+  while (Date.now() < deadline) {
+    after = requestCount();
+    if (after > before) {
+      attached = true;
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 15_000));
   }
-  await new Promise((r) => setTimeout(r, 15_000));
+  console.log(
+    attached
+      ? `re-attached: Copilot review_requested events ${before} -> ${after}`
+      : `no new Copilot review_requested event after 2 minutes (still ${before}). Hand it to the user to attach Copilot from the Reviewers gear (§1).`,
+  );
+} catch (error) {
+  console.log(
+    `could not read the timeline to confirm the attach: ${String(error.stderr || error.message).trim()}`,
+  );
+} finally {
+  for (const line of unrestored) console.log(`NOT RESTORED: ${line}`);
 }
-console.log(
-  attached
-    ? `re-attached: Copilot review_requested events ${before} -> ${requestCount()}`
-    : `no new Copilot review_requested event after 2 minutes (still ${before}). Hand it to the user to attach Copilot from the Reviewers gear (§1).`,
-);
-for (const line of unrestored) console.log(`NOT RESTORED: ${line}`);
 process.exit(attached && unrestored.length === 0 ? 0 : 1);
