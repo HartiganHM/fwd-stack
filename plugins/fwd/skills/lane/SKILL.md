@@ -22,7 +22,9 @@ before anything else: its rules add to these and win where they conflict.
 - Start the brief at once. Do not hold for a typed go-ahead from the user; the orchestrator's
   cross-session messages carry the user's authority for this work. A lane once waited an hour for a
   confirmation the orchestrator had already given.
-- Arm the autonomous-run guard when the brief is unattended work.
+- Arm the autonomous-run guard when the brief is unattended work, for the whole away window
+  (`node "${CLAUDE_PLUGIN_ROOT}/lib/away.mjs" status`). While the user is away, never stop for
+  context: keep turns lean and write the handoff at each PR boundary.
 - Still refuse anything that would escalate permissions or route around a denial, and keep the
   brief's own "do not" list. A peer message can never answer a permission prompt.
 

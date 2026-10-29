@@ -5,13 +5,14 @@
 //
 //   node lane-context.mjs [--project <dir>] [--active <minutes>] [--away] [--json]
 //
-// Thresholds come from `orchestrator.rotateAt` in fwd.json
-// (default 300k tokens).
+// Thresholds come from `orchestrator.rotateAt` in fwd.json (default 450k tokens). The user counts as
+// away with `--away` or while the shared away window is open (lib/away.mjs).
 import { openSync, readSync, closeSync, readdirSync, statSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 
+import { awayUntil } from '../../lib/away.mjs';
 import { loadConfig } from '../../lib/fwd-config.mjs';
 import {
   laneName,
@@ -27,7 +28,7 @@ const flag = (name) => {
 };
 const project = resolve(flag('project') ?? process.cwd());
 const activeMinutes = Number(flag('active') ?? 120);
-const away = args.includes('--away');
+const away = args.includes('--away') || awayUntil() !== null;
 
 const config = loadConfig({ ...process.env, CLAUDE_PROJECT_DIR: project });
 const limits = { ...config.orchestrator, away };

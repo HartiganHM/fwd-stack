@@ -9,8 +9,9 @@
 //   PostToolUse: once per band crossed (the warning line, the critical line, then every 100k
 //     above it), so a session running unattended, which sees no user prompt for hours, is told too.
 //
-// Lines: `sessionBudget.warnTokens` (default 150k) and `orchestrator.rotateAt` (default 300k),
-// the same line the orchestrator rotates lanes at.
+// Lines: `sessionBudget.warnTokens` (default 150k) and `orchestrator.rotateAt` (default 450k),
+// the same line the orchestrator rotates lanes at. While the user is away (lib/away.mjs) the
+// critical line tells a session to keep working: nobody is there to restart it.
 import {
   closeSync,
   mkdirSync,
@@ -24,6 +25,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
+import { awayUntil } from '../lib/away.mjs';
 import { isMain } from '../lib/is-main.mjs';
 import { loadConfig } from '../lib/fwd-config.mjs';
 import { pluginDataDir } from '../lib/plugin-data.mjs';
@@ -32,7 +34,7 @@ import { sessionSummary } from '../skills/orchestrator/lane-core.mjs';
 const STEP = 100_000;
 
 export function lines(config = {}) {
-  const critical = config.orchestrator?.rotateAt ?? 300_000;
+  const critical = config.orchestrator?.rotateAt ?? 450_000;
   // A rotation line set below the warning line still warns at it: the warning never comes later.
   const warn = Math.min(config.sessionBudget?.warnTokens ?? 150_000, critical);
   return { warn, critical };
@@ -47,8 +49,10 @@ export function band(context, { warn, critical }) {
 
 const k = (n) => `${Math.round(n / 1000)}k`;
 
-export function budgetMessage(context, { warn, critical }) {
+export function budgetMessage(context, { warn, critical }, away = false) {
   if (context === null || context < warn) return null;
+  if (context >= critical && away)
+    return `[SESSION BUDGET — USER AWAY] This session's context is ~${k(context)} tokens, past the ${k(critical)} rotation line. The user is away, so do not stop or wait for rotation: keep working with lean turns, and write your handoff at each PR boundary so a restart can pick up from it. Rotation waits for the user's return.`;
   if (context >= critical)
     return `[SESSION BUDGET CRITICAL] This session's context is ~${k(context)} tokens, past the ${k(critical)} rotation line, and every turn re-reads all of it. At your next PR boundary: as a lane, write your handoff and ask the orchestrator to rotate you; otherwise suggest the user run /compact or start a fresh session. Until then, keep reads tight.`;
   return `[SESSION BUDGET WARNING] This session's context is ~${k(context)} tokens (rotation at ${k(critical)}), and every turn re-reads all of it. Keep reads tight; plan to hand off or compact at the next natural boundary.`;
@@ -120,7 +124,7 @@ if (isMain(import.meta.url)) {
     process.exit(0);
   }
   const l = lines(loadConfig());
-  const message = budgetMessage(context, l);
+  const message = budgetMessage(context, l, awayUntil() !== null);
   if (payload.hook_event_name === 'PostToolUse') {
     // Recorded below the warning line too, so a session compacted back under it warns again.
     if (

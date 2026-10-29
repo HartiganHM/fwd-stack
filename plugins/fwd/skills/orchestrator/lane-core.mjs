@@ -63,7 +63,7 @@ export function laneName(tailSummary, headSummary = {}) {
  * sitting. A lane over `rotateAt` keeps working with lean turns and writes a handoff at each PR
  * boundary, and the rotation waits for the user's return.
  */
-export function verdict(context, { rotateAt = 300_000, away = false } = {}) {
+export function verdict(context, { rotateAt = 450_000, away = false } = {}) {
   if (context === null) return 'no turns yet';
   if (away) {
     return context >= rotateAt
