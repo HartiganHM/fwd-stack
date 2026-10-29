@@ -95,6 +95,17 @@ const stateDir = (sessionId, env, away = false) =>
 export function crossed(sessionId, now, seen, env = process.env, away = false) {
   rmSync(stateDir(sessionId, env, !away), { recursive: true, force: true });
   const dir = stateDir(sessionId, env, away);
+  try {
+    return announce(dir, now, seen);
+  } catch (error) {
+    // A hook in the other mode removed this folder meanwhile: the mode just changed, and the
+    // hooks running in the new mode do the announcing. Drop this one.
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+function announce(dir, now, seen) {
   mkdirSync(dir, { recursive: true });
   for (const f of readdirSync(dir)) {
     if (!(Number(f) > now)) continue;
