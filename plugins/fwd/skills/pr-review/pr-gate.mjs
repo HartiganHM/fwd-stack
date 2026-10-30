@@ -380,6 +380,8 @@ const classify = (p) =>
 // A `## Doc-sync` section names the paths whose findings were comment, naming or
 // PR-body accuracy only. One PR spent two extra rounds because round 4's single
 // finding was a parameter named `seedable` while the caller passed `tickable`.
+// Entries are round-scoped like `## Settled` (see settled.mjs): a listed file's
+// LATER findings still count, or one listing hides every round after it.
 const docSynced = parseDocSync(prData.body);
 
 // ---- human review ----------------------------------------------------------
@@ -453,13 +455,20 @@ const isDeclined = (p, n) =>
     n,
     rounds.filter((r) => !r.errored),
   );
+const isDocSynced = (p, n) =>
+  isDeclinedIn(
+    docSynced,
+    p,
+    n,
+    rounds.filter((r) => !r.errored),
+  );
 const roundWeight = (round) => {
   const counts = round.paths.some(
     (p) =>
       classify(p) === 'product' &&
       !isDeclined(p, round.n) &&
       !isHandoff(p) &&
-      !(docSynced.has(p) || docSynced.has(p.split('/').pop())),
+      !isDocSynced(p, round.n),
   );
   if (!counts) return 'soft';
   // A reviewer that did not say `Changes recommended`, and raised nothing inline,
@@ -732,7 +741,7 @@ if (docSynced.size > 0) {
   say(
     true,
     'doc-sync         ',
-    `${[...docSynced].join(', ')} — findings there do not reset the counter §5, from the PR body's ## Doc-sync`,
+    `${[...docSynced.keys()].join(', ')} — findings there do not reset the counter §5 in the round each ## Doc-sync entry names (or the first round that flagged it); later findings count`,
   );
 }
 if (humanReviewer) {

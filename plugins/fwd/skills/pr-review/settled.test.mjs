@@ -2,7 +2,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isDeclinedIn, mentions, parseSettled } from './settled.mjs';
+import {
+  isDeclinedIn,
+  mentions,
+  parseDocSync,
+  parseSettled,
+} from './settled.mjs';
 
 const body = (settled) =>
   `Summary.\n\n## Settled\n\n${settled}\n\n## Size\n\nlater section \`other.ts\` round 9\n`;
@@ -188,4 +193,70 @@ test('a slashed path keeps its parentheses, a call does not count', () => {
   );
   assert.equal(mentions(settled, 'src/app/(auth)/page.tsx'), true);
   assert.equal(settled.size, 1);
+});
+
+// ---- ## Doc-sync ------------------------------------------------------------
+// Doc-sync used to be a flat set: listing a file discounted every later round's
+// findings on it, and one PR read eight trailing clean rounds where two were.
+
+const docSyncBody = (lines) =>
+  `Summary.\n\n## Doc-sync\n\n${lines}\n\n## Settled\n\n- \`other.ts\` (round 1): no.\n`;
+
+test('a doc-sync entry naming round 2 does not hide rounds 3 to 8 on the same file', () => {
+  const docSync = parseDocSync(
+    docSyncBody('- `src/lib/gate.mjs` (round 2): stale JSDoc fixed.'),
+  );
+  const rounds = [1, 2, 3, 4, 5, 6, 7, 8].map((n) => ({
+    n,
+    paths: n === 1 ? [] : ['src/lib/gate.mjs'],
+  }));
+  assert.equal(isDeclinedIn(docSync, 'src/lib/gate.mjs', 2, rounds), true);
+  for (const n of [3, 4, 5, 6, 7, 8]) {
+    assert.equal(
+      isDeclinedIn(docSync, 'src/lib/gate.mjs', n, rounds),
+      false,
+      `round ${n} must count`,
+    );
+  }
+});
+
+test('a bare doc-sync entry covers only the first round that flagged the file', () => {
+  const docSync = parseDocSync(
+    docSyncBody('- `gate.mjs`: comment named the old flag.'),
+  );
+  const rounds = [
+    { n: 1, paths: ['src/a.ts'] },
+    { n: 2, paths: ['src/lib/gate.mjs'] },
+    { n: 3, paths: ['src/lib/gate.mjs'] },
+  ];
+  assert.equal(isDeclinedIn(docSync, 'src/lib/gate.mjs', 2, rounds), true);
+  assert.equal(isDeclinedIn(docSync, 'src/lib/gate.mjs', 3, rounds), false);
+});
+
+test('a doc-sync line answers one finding, not every finding that round', () => {
+  const docSync = parseDocSync(
+    docSyncBody('- `src/a.tsx` (round 1): PR body named the wrong prop.'),
+  );
+  const rounds = [{ n: 1, paths: ['src/a.tsx'], findings: { 'src/a.tsx': 2 } }];
+  assert.equal(isDeclinedIn(docSync, 'src/a.tsx', 1, rounds), false);
+});
+
+test('doc-sync listing a round range covers each round in it, and no file it does not name', () => {
+  const docSync = parseDocSync(
+    docSyncBody('- `src/a.tsx` (rounds 2-3): stale comment re-raised.'),
+  );
+  const rounds = [2, 3, 4].map((n) => ({
+    n,
+    paths: ['src/a.tsx', 'src/b.tsx'],
+  }));
+  assert.equal(isDeclinedIn(docSync, 'src/a.tsx', 2, rounds), true);
+  assert.equal(isDeclinedIn(docSync, 'src/a.tsx', 3, rounds), true);
+  assert.equal(isDeclinedIn(docSync, 'src/a.tsx', 4, rounds), false);
+  assert.equal(isDeclinedIn(docSync, 'src/b.tsx', 2, rounds), false);
+});
+
+test('doc-sync and settled read their own sections only', () => {
+  const body = docSyncBody('- `src/a.tsx` (round 1): stale comment.');
+  assert.equal(mentions(parseDocSync(body), 'other.ts'), false);
+  assert.equal(mentions(parseSettled(body), 'src/a.tsx'), false);
 });

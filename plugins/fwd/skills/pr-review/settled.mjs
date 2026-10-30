@@ -75,12 +75,17 @@ const roundsOn = (line) => {
  * takes the union; one bare mention does not widen a path another line scopes.
  */
 export function parseSettled(body) {
+  return parseEntries(body, 'Settled');
+}
+
+// The same parse for any section whose entries answer findings round by round.
+function parseEntries(body, heading) {
   const settled = new Map();
   // One entry per Settled line naming the path: a decline answers one finding, so the
   // lines are counted (isDeclinedIn) rather than only unioned into the Map's value.
   const lines = new Map();
   Object.defineProperty(settled, 'lines', { value: lines });
-  for (const line of section(body, 'Settled').split('\n')) {
+  for (const line of section(body, heading).split('\n')) {
     const rounds = roundsOn(line);
     // A line naming one file twice is still one decline: counting each mention let a single
     // entry discount two findings on that file.
@@ -101,9 +106,18 @@ export function parseSettled(body) {
   return settled;
 }
 
-/** Paths a `## Doc-sync` section names. Unchanged: doc-sync is not round-scoped. */
+/**
+ * `## Doc-sync` entries, read and scoped exactly as `## Settled` ones (§5 says to name the paths
+ * "exactly as `## Settled` names declined ones"), so `isDeclinedIn` decides both.
+ *
+ * WHY ROUNDS. Doc-sync used to be a flat set of paths: once a file was listed, no finding on it
+ * counted in ANY round. A PR listed a file for one comment-accuracy fix and the gate then read
+ * eight trailing successful rounds where two were clean, because every later finding on that
+ * file, logic ones included, was discounted. An entry answers the doc-sync finding it was
+ * written for, in the round it names (or the first round that flagged the file), and nothing else.
+ */
 export function parseDocSync(body) {
-  return new Set(pathsIn(section(body, 'Doc-sync')));
+  return parseEntries(body, 'Doc-sync');
 }
 
 const base = (p) => p.split('/').pop();

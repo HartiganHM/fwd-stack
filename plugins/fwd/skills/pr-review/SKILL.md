@@ -356,7 +356,9 @@ The full suite also runs on lockfile, config, CI or dependency changes, or when 
   stale comments, plan-doc references, migration-number drift — fix them
   same-round, they're cheap, but the round still counts as successful. Any
   finding revealing an actual behaviour, type or logic issue is not doc-sync and
-  resets as usual.
+  resets as usual. An entry is scoped like a `## Settled` one: one line per
+  finding, naming its round, and it covers that round only. A later finding on
+  the same file counts in full.
 - **A push does not oblige a re-request.** This is the gate that matters, because
   the re-request is the expensive act — it costs a round, and that round finds a
   new nit, and the loop runs. **Re-request only after fixing a Critical, High or
