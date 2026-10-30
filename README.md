@@ -15,7 +15,7 @@ The design and the reasoning behind it are in the
 | `packages/eslint-config`        | `base`, `node` and `next` ESLint flat configs                                                                               |
 | `packages/prettier-config`      | The shared Prettier config                                                                                                  |
 | `packages/commitlint-config`    | Conventional commits with the shared type list                                                                              |
-| `.github/workflows/node-ci.yml` | Reusable CI gate: install, then typecheck, lint, test and build                                                             |
+| `.github/workflows/node-ci.yml` | Reusable CI gate: install, then typecheck, lint, test and build; opt-in selected tests with a nightly full run              |
 | `baseline.json`                 | The majors every project is held to (Node, pnpm, Next, React, Zod, Vitest, Sentry, Drizzle …), plus a Node security minimum |
 | `plugins/fwd`                   | Claude Code plugin: the shared agent skills and their guard hooks                                                           |
 | `tests/`                        | Proves each config loads and enforces what it claims                                                                        |
@@ -56,6 +56,105 @@ jobs:
     with:
       scripts: typecheck lint test build
 ```
+
+### Selected tests on pull requests, the full suite nightly
+
+This is optional, and off by default. A project whose suite is slow can run only the tests a change
+needs on pull requests and pushes, and the whole suite on a schedule. Name a package.json script
+that runs the selected tests:
+
+```yaml
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # The full suite on main, nightly: the net under anything the selection missed.
+  schedule:
+    - cron: '17 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  gate:
+    uses: HartiganHM/fwd-stack/.github/workflows/node-ci.yml@main
+    with:
+      scripts: typecheck lint test build
+      selected-test-script: test:selected
+```
+
+With `selected-test-script` set, the step that would run `test` works like this:
+
+- **Pull request.** Runs `test:selected` with `CI_BASE_REF` set to `origin/<base branch>`.
+- **Push.** Runs `test:selected` with `CI_BASE_REF` set to the commit before the push. A new branch,
+  or a forced push whose old head is gone, has no base to compare against, so it runs `test` in full.
+- **Anything else** (the `schedule`, a `workflow_dispatch`). Runs `test` in full.
+
+The checkout is then made with full history, so the base commit is there to compare against. The
+selected script must exist: it runs without `--if-present`, so a misspelt name fails the job instead
+of passing without running a test. With the input empty, the workflow runs exactly as it always has.
+
+How a project selects is its own business. The script reads `CI_BASE_REF`. The simplest form is
+Vitest's own. A change that touches no test, such as a README edit, selects none, and Vitest exits 1
+on an empty run unless it is told not to:
+
+```json
+{
+  "scripts": {
+    "test:selected": "vitest run --changed \"$CI_BASE_REF\" --passWithNoTests"
+  }
+}
+```
+
+An import graph cannot see a test that reads files instead of importing them, such as a guard that
+scans the source tree. A project with tests like that should add them to every selection, or have
+its selector run the full suite when a shared config changes. The nightly run catches what the
+selection missed, but only the next day.
+
+#### When the nightly run goes red
+
+A red nightly run has no pull request to block, so nobody sees it unless something reports it.
+GitHub emails whoever last edited the schedule, and an orchestrator session never reads that email.
+Two ways to put it where the orchestrator looks:
+
+- **Check it on every status pass.** This prints the last scheduled run's result:
+
+  ```sh
+  gh run list --workflow ci.yml --event schedule --limit 1 \
+    --json conclusion,url,createdAt
+  ```
+
+  A `failure` there is reported like any other red CI, and a lane is briefed to fix it before
+  anything else merges.
+
+- **Open an issue from the run.** Add this job beside `gate` in the caller. It opens one issue,
+  labelled so the backlog shows it, and adds a comment for each later red night while it stays open:
+
+  ```yaml
+  nightly-red:
+    needs: gate
+    if: ${{ failure() && github.event_name == 'schedule' }}
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          open=$(gh issue list --label ci:nightly-red --state open \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body "Failed again: $RUN_URL"
+          else
+            gh label create ci:nightly-red --color B60205 --force
+            gh issue create --label ci:nightly-red \
+              --title "Nightly full suite failed on $(date -u +%F)" \
+              --body "The scheduled full test run failed: $RUN_URL"
+          fi
+  ```
+
+  The orchestrator then finds it with `gh issue list --label ci:nightly-red`. Close the issue in the
+  PR that fixes the failure.
 
 ## The Claude Code plugin
 

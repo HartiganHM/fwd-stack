@@ -8,8 +8,12 @@
 #         build-env: |
 #           DATABASE_URL=postgres://stub:stub@localhost/stub
 #
-# Project-specific jobs (e2e, test selection, probes) stay in the project's own workflow beside
-# this call. Each script runs through `pnpm run --if-present`, so a project without one skips it.
+# Project-specific jobs (e2e, probes) stay in the project's own workflow beside this call. Each
+# script runs through `pnpm run --if-present`, so a project without one skips it.
+#
+# Selected tests (opt-in): with `selected-test-script` set, pull requests and pushes run that script
+# in place of `test`, with CI_BASE_REF naming the commit to compare against, and every other event
+# (the caller's `schedule`, a `workflow_dispatch`) runs `test` in full. The README has the caller.
 name: Node CI
 
 on:
@@ -34,6 +38,14 @@ on:
       timeout-minutes:
         type: number
         default: 20
+      selected-test-script:
+        description: >-
+          Opt-in. A package.json script that runs only the tests a change needs. When set, a pull
+          request or a push runs it in place of `test`, with CI_BASE_REF set to the commit to compare
+          against; any other event, or a push with no usable base, runs `test` in full. Empty (the
+          default) runs `test` on every event.
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -47,6 +59,9 @@ jobs:
         working-directory: ${{ inputs.working-directory }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          # Selection compares against a base commit, so it needs the history; the default needs one.
+          fetch-depth: ${{ inputs.selected-test-script != '' && '0' || '1' }}
 
       # `working-directory` reaches only `run` steps, so the setup actions are given the nested
       # project's files explicitly.
@@ -75,8 +90,30 @@ jobs:
       - name: Run scripts
         env:
           SCRIPTS: ${{ inputs.scripts }}
+          SELECTED: ${{ inputs.selected-test-script }}
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.base_ref }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           for script in $SCRIPTS; do
+            if [ "$script" = test ] && [ -n "$SELECTED" ]; then
+              # A pull request compares against its base branch, a push against the commit before
+              # it. A new branch or a forced push has no such commit here, so it runs in full, as
+              # does every other event: the schedule and a dispatch are the full runs.
+              base=""
+              case "$EVENT" in
+                pull_request) base="origin/$PR_BASE" ;;
+                push) base="$PUSH_BEFORE" ;;
+              esac
+              if [ -n "$base" ] && git rev-parse --quiet --verify "$base^{commit}" >/dev/null; then
+                echo "::group::pnpm run $SELECTED (selected tests against $base, $EVENT)"
+                # No --if-present: a misspelt script must fail, not pass without running a test.
+                CI_BASE_REF="$base" pnpm run "$SELECTED"
+                echo "::endgroup::"
+                continue
+              fi
+              echo "Full test suite: $EVENT${base:+, and $base is not a commit here}"
+            fi
             echo "::group::pnpm run $script"
             pnpm run --if-present "$script"
             echo "::endgroup::"
