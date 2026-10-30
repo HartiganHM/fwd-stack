@@ -32,6 +32,7 @@ budget and a hard stop. So:
   Don't use a GitHub-side Claude Action; it bills API usage per run, which is the same problem as Copilot.
 - **`## Claude review` records:** the reviewer used (`cavecrew-reviewer` or `/code-review <level>`), the
   number of findings by severity, and what was fixed or declined. One short paragraph.
+  The gate rejects a section that is empty or a placeholder (pending, TBD, todo, n/a, a comment).
 - **Measured for a month (2026-10-30 to 2026-11-30), then re-ruled.** Two questions: cost, and escaped
   bugs. When a fix PR repairs a defect that an earlier merged PR introduced, its body names that PR
   under `## Escaped from #N`. At the month's end, count Copilot AI credits, reviews by PR kind, and
