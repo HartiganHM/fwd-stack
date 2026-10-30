@@ -1,6 +1,6 @@
 ---
 name: progress-chart
-description: Use whenever the user asks for status, the queue, progress, or "how is everything coming" / "how's it going" / "where are we" on a project's work. Shows the progress chart first and alone (one 20-cell bar per named feature line, counted from merged PRs), then a per-group detail table only when the user asks about that group. Also governs how feature lines are added, ordered and counted.
+description: Use whenever the user asks for status, the queue, progress, or "how is everything coming" / "how's it going" / "where are we" on a project's work. Shows the progress chart first and alone (one 20-cell bar per named feature line, counted from merged PRs, grouped under ACTIVE, QUEUED and PAUSED labels), then a per-group detail table only when the user asks about that group. Also governs how feature lines are added, ordered and counted.
 ---
 
 # progress-chart
@@ -23,7 +23,8 @@ the single open decision (§6).
 - **Lines are the user's named feature lines only.** Add one only when the user names it or asks
   to promote a group. Everything else is **One-offs**, which get no bar; list them under the chart
   in a line or two if they matter now.
-- **Order:** active priority lines first, then queued, then paused.
+- **Order:** active priority lines first, then queued, then paused, each group under its label
+  (§3).
 - **A step** is a PR or a user or external action, sized so each one is a visible unit. When a line
   counts something else, name the unit ("items", "switches retired").
 - **Keep a stable step list per line** in the project's board or priorities file, so M does not
@@ -34,21 +35,30 @@ the single open decision (§6).
 
 ## 3 · The chart
 
-A fenced code block, one line per feature line:
+A fenced code block. Each group (ACTIVE, QUEUED, PAUSED, in that order) opens with its label on a
+line of its own, then one line per feature line in it, with a blank line between groups. Omit a
+group that has no lines. The labels say outright that the order means priority.
 
 ```
+<GROUP LABEL>
 <LINE NAME, caps, padded to 22> <20-cell bar>  <N of M steps done> [(qualifier)]
 ```
 
 Right-align N so the counts line up. Glyphs: `█` done, `▒` in flight, `░` not started.
-Qualifiers, in parentheses: `(paused)`, `(waits for X)`, `(your call)`.
+Qualifiers, in parentheses: `(waits for X)`, `(your call)`. A paused line needs no `(paused)`:
+its label says so.
 
 ```
+ACTIVE
 CHECKOUT V2            █████████▒▒░░░░░░░░░   5 of 11 steps done
 NOTIFICATIONS          ███████████▒▒▒▒░░░░░   8 of 15 steps done
+
+QUEUED
 REFERRAL TRIAL         ████░░░░░░░░░░░░░░░░   2 of 11 steps done (waits for Notifications)
 PUBLIC LAUNCH          █████░░░░░░░░░░░░░░░   3 of 11 items done
-FLAG RETIREMENTS       ██████▒░░░░░░░░░░░░░  11 of 35 switches retired (paused)
+
+PAUSED
+FLAG RETIREMENTS       ██████▒░░░░░░░░░░░░░  11 of 35 switches retired
 ```
 
 ## 4 · Bar math
