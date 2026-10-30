@@ -3,7 +3,8 @@
 The shared configs, CI gate and version baseline for Concert Crawl (`HartiganHM/concert-crawl`)
 and The 99 (`HartiganHM/the-99`). Design doc: https://claude.ai/artifact/Tah89KVLvYZKj7cATrYzwZ
 
-- pnpm only. Gate before every push: `pnpm format:check && pnpm typecheck && pnpm lint && pnpm test`.
+- pnpm only. Gate before every push: `pnpm format:check && pnpm typecheck && pnpm lint`. No tests
+  locally; CI is the only test gate (`pr-review` skill, §5).
 - Conventional commits (`feat:`, `fix:`, `chore:`, `docs:`, `test:`, `refactor:`, `perf:`, `ci:`).
 - Never commit to `main`; every change is a PR. Review cycles and the merge bar follow the
   `pr-review` skill; run its gate (`plugins/fwd/skills/pr-review/pr-gate.mjs`) rather than

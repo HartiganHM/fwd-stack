@@ -494,8 +494,8 @@ const createdHere = files
 //
 // Asked per file, from that file's own commit history, and NOT from
 // `compare(roundThreeSha...head)`. That compare resolves through a merge base,
-// so once the branch is rebased — which this project's pre-push gate requires on
-// every push — it reports every file the PR creates as "added", whenever it was
+// so once the branch is rebased — which the pre-push gate (pr-review §5) requires
+// on every push — it reports every file the PR creates as "added", whenever it was
 // really added. On one PR it named a probe and an inventory that had both
 // been there since the PR opened, in all eight gate runs from round 4 on, and
 // the warning had to be discounted by hand every time. A rule that cries wolf
