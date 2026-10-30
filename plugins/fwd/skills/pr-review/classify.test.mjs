@@ -413,3 +413,64 @@ test('a block-comment delimiter added or removed around unchanged code is runtim
   ].join('\n');
   assert.ok(commentOnlyHunks(jsdoc));
 });
+
+test('a // */ inside a block comment opened above the hunk is runtime', () => {
+  // A plain block comment, no JSDoc stars, opened above the hunk: `// */` would close it and
+  // bring `run();` back as code.
+  const patch = [
+    '@@ -3,3 +3,3 @@',
+    ' notes about the old code',
+    '-// old',
+    '+// */',
+    ' run();',
+  ].join('\n');
+  const head = [
+    'const a = 1;',
+    '/*',
+    ' notes about the old code',
+    ' // */',
+    ' run();',
+    '// */',
+    'const b = 2;',
+  ].join('\n');
+  assert.equal(isCommentOnlyChange(mjs(patch), head), false);
+});
+
+test('a block comment opened mid-line above the hunk is read from the head file', () => {
+  // The patch reads `x(); /* start` as code; the head file knows a block is open after it.
+  const patch = [
+    '@@ -1,3 +1,3 @@',
+    ' x(); /* start',
+    '-  old words',
+    '+  new words',
+    ' end */',
+  ].join('\n');
+  assert.equal(
+    commentOnlyHunks(patch),
+    null,
+    'the patch reads the words as code',
+  );
+  const comment = [
+    '@@ -1,3 +1,3 @@',
+    ' x(); /* start',
+    '-// old',
+    '+// new',
+    ' y();',
+  ].join('\n');
+  // The patch alone thinks `y();` is code; the head file says it sits in the open block, so the
+  // hunk does not read the way the patch claims and the answer is runtime.
+  assert.ok(commentOnlyHunks(comment));
+  const head = ['x(); /* start', '// new', 'y();', '*/', 'const b = 2;'].join(
+    '\n',
+  );
+  assert.equal(isCommentOnlyChange(mjs(comment), head), false);
+});
+
+test('a slash after ) that could be a regex hiding a backtick or quote makes the file unreadable', () => {
+  assert.equal(lineStates("if (true) /`/.test('');\nconst a = 1;"), null);
+  // Plain division after a parenthesis still reads.
+  assert.deepEqual(lineStates('const a = (b + c) / 2;\nconst d = 1;'), [
+    'code',
+    'code',
+  ]);
+});

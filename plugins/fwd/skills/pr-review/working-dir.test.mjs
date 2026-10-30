@@ -76,6 +76,25 @@ test('a cd on one branch of ||, behind a prefix or keyword, in eval, or a source
     assert.deepEqual(at(cmd), { unknown: true }, cmd);
 });
 
+test('a backgrounded list, or a moving wrapper sharing its element, is unknown', () => {
+  for (const cmd of [
+    // `&` backgrounds `cd /repo-b && sleep 1`, so the merge stays where it was.
+    'cd /repo-b && sleep 1 & gh pr merge 42',
+    "bash -c 'cd /repo-b && gh pr merge 42' | cat",
+  ])
+    assert.deepEqual(at(cmd), { unknown: true }, cmd);
+  // Redirections are not backgrounding.
+  assert.deepEqual(at('cd /x && gh pr merge 42 2>&1 | tail -3'), { dir: '/x' });
+});
+
+test('a cd spelled with a backslash or quotes is still a cd', () => {
+  assert.deepEqual(at('\\cd /repo-b && gh pr merge 42'), { dir: '/repo-b' });
+  assert.deepEqual(at("'cd' /repo-b && gh pr merge 42"), { dir: '/repo-b' });
+  assert.deepEqual(at("bash -c '\\cd /repo-b && gh pr merge 42'"), {
+    dir: '/repo-b',
+  });
+});
+
 test('a lone dot that is an argument, not a command, changes nothing', () => {
   assert.deepEqual(at('git add . && gh pr merge 42'), { dir: null });
   assert.deepEqual(at('cd /x && git add . && gh pr merge 42'), { dir: '/x' });

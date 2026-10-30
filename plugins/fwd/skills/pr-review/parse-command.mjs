@@ -526,8 +526,20 @@ const isEval = (words) =>
   words.find((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w) && !PREFIXES.has(w)) ===
   'eval';
 
+// Whether a command line may change directory anywhere: the raw text, or any word once the shell
+// has removed quotes and backslashes (`\cd`, `'cd'`), or a wrapper's body inside one word.
+// A wrapper's body is read the same way, as the command line it is.
+const changesDir = (text, depth = 0) =>
+  CHANGES_DIR.test(text) ||
+  simpleCommands(text).some((words) => {
+    if (mayChangeDir(words) || words.some((w) => CHANGES_DIR.test(w)))
+      return true;
+    const body = depth < 3 ? innerCommandLine(words) : null;
+    return body !== null && changesDir(body, depth + 1);
+  });
+
 export function workingDir(cmd, cwd, home = homedir()) {
-  if (!CHANGES_DIR.test(cmd)) return { dir: null };
+  if (!changesDir(cmd)) return { dir: null };
   const where = walkDirs(cmd, cwd, home, 0);
   if (where.unknown) return where;
   return { dir: where.dir === cwd ? null : where.dir };
@@ -538,6 +550,9 @@ function walkDirs(cmd, cwd, home, depth) {
   if (depth > 3) return unknown;
   // `cd /a || cd /b; <gated>` runs in either directory, depending on the first `cd`.
   const branches = /\|\|/.test(unquoted(cmd));
+  // A single `&` backgrounds the whole and-or list before it (`cd /b && make & <gated>`), so a
+  // `cd` in it never reaches what follows. Redirections (`2>&1`, `&>`) are not backgrounding.
+  if (/(^|[^&>])&(?![&>])/.test(unquoted(cmd))) return unknown;
   let dir = cwd;
   let gatedDir = null;
   const ranIn = (d) => {
@@ -565,15 +580,22 @@ function walkDirs(cmd, cwd, home, depth) {
     }
     // A shell wrapper (`bash -c 'cd x && …'`): its `cd` ends with it, and its gated commands run
     // where it changed to. `eval` is not a wrapper for this: it runs in this shell.
+    // A wrapper that changes directory, sharing its element with anything (`bash -c 'cd x && …' |
+    // cat`), is not followed.
+    const movingWrappers = commands.filter((c) => {
+      const body = innerCommandLine(c);
+      return body !== null && changesDir(body);
+    });
+    if (movingWrappers.length > 0 && commands.length !== 1) return unknown;
     const inner = words ? innerCommandLine(words) : null;
-    if (inner !== null && CHANGES_DIR.test(inner)) {
+    if (inner !== null && changesDir(inner)) {
       if (isEval(words)) return unknown;
       const sub = walkDirs(inner, dir, home, depth + 1);
       if (sub.unknown) return unknown;
       if (sub.dir !== null && !ranIn(sub.dir)) return unknown;
       continue;
     }
-    if (inner === null && commands.some(mayChangeDir)) {
+    if (commands.some(mayChangeDir)) {
       // A subshell's own `cd`, with nothing gated beside it, ends with the subshell.
       if (!gated && element.startsWith('(')) continue;
       return unknown;

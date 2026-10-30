@@ -86,68 +86,94 @@ function startsInsideBlock(lines) {
   return false;
 }
 
-// Which lines of one side of a hunk are comments or blank. The old side (context and removed
-// lines) and the new side (context and added lines) are read apart: a removed `/*` must not make
-// the added line after it read as comment text.
-function commentFlags(lines) {
-  let inBlock = startsInsideBlock(lines);
+// Which lines of one side of a hunk are comments or blank, read from `startInBlock` (whether a
+// block comment is open where the hunk starts). The old side (context and removed lines) and the
+// new side (context and added lines) are read apart: a removed `/*` must not make the added line
+// after it read as comment text. Each line reports:
+//  - `comment`: the line is a comment or blank;
+//  - `delimiters`: every `/*` and `*/` on it is one this reading opened or closed with. A `// */`
+//    inside a block comment opened somewhere this reading cannot see would close it;
+//  - `start` and `open`: whether a block comment is open before and after the line.
+function commentFlags(lines, startInBlock) {
+  let inBlock = startInBlock;
   return lines.map(({ text }) => {
     const t = text.trim();
+    const start = inBlock;
     let comment = false;
+    let delimiters = true;
     if (inBlock) {
       const close = t.indexOf('*/');
       if (close !== -1) inBlock = false;
       // Code after the comment closes (`*/ run()`) is code.
       comment = close === -1 || t.slice(close + 2).trim() === '';
-    } else if (t === '' || t.startsWith('//')) comment = true;
-    else if (t.startsWith('/*')) {
+    } else if (t === '' || t.startsWith('//')) {
+      comment = true;
+      delimiters = !/\/\*|\*\//.test(t);
+    } else if (t.startsWith('/*')) {
       const close = t.indexOf('*/', 2);
       if (close === -1) inBlock = true;
       comment = close === -1 || t.slice(close + 2).trim() === '';
     }
-    // `open`: whether a block comment is still open after this line.
-    return { comment, open: inBlock };
+    return { comment, delimiters, start, open: inBlock };
   });
 }
 
-// Whether every changed line of a JavaScript or TypeScript patch is a comment or blank, read from
-// the patch alone. Returns the hunks (for the template-literal check) or null.
+// One hunk, both sides, from the block state each side starts in. Null unless every changed line
+// is a comment, and every unchanged line reads the same on both sides.
 //
-// Changed lines are not enough. Adding `/*` above unchanged code and `*/` below it comments the
-// code out without one changed line being code. So every unchanged line must read the same on both
-// sides, comment or code, with a block comment open after it or not, and each side must end the
-// hunk in the same state, so the lines after the hunk read the same too.
+// Changed lines alone are not enough. Adding `/*` above unchanged code and `*/` below it comments
+// the code out without one changed line being code. So every unchanged line must read the same on
+// both sides, comment or code, with a block comment open after it or not, and each side must end
+// the hunk in the same state, so the lines after the hunk read the same too.
+function checkHunk(lines, startFor) {
+  const sides = {};
+  let changed = 0;
+  for (const side of ['-', '+']) {
+    const own = lines.filter((l) => l.kind === ' ' || l.kind === side);
+    const start = startFor(own);
+    const flags = commentFlags(own, start);
+    for (const [i, { kind, text }] of own.entries()) {
+      if (kind === ' ') continue;
+      changed++;
+      const f = flags[i];
+      // A changed line that is not a comment, carries a comment delimiter this reading did not
+      // consume, or could move a template literal's boundary (an odd count of backticks, or a
+      // `${`), is runtime.
+      if (
+        !f.comment ||
+        !f.delimiters ||
+        backticks(text) % 2 !== 0 ||
+        text.includes('${')
+      )
+        return null;
+    }
+    sides[side] = {
+      flags,
+      context: flags.filter((_, i) => own[i].kind === ' '),
+      end: flags.at(-1)?.open ?? start,
+    };
+  }
+  if (sides['-'].end !== sides['+'].end) return null;
+  for (const [i, before] of sides['-'].context.entries()) {
+    const after = sides['+'].context[i];
+    if (before.comment !== after.comment || before.open !== after.open)
+      return null;
+  }
+  return { changed, newSide: sides['+'].flags };
+}
+
+// Whether every changed line of a JavaScript or TypeScript patch is a comment or blank, read from
+// the patch alone, guessing each hunk's starting state from its own lines (startsInsideBlock).
+// Returns the hunks, or null. A pre-filter: isCommentOnlyChange reads the real starting state from
+// the head file and checks again.
 export function commentOnlyHunks(patch) {
   const hunks = parsePatch(patch);
   if (!hunks) return null;
   let changed = 0;
   for (const { lines } of hunks) {
-    const context = {};
-    const end = {};
-    for (const side of ['-', '+']) {
-      const own = lines.filter((l) => l.kind === ' ' || l.kind === side);
-      const flags = commentFlags(own);
-      for (const [i, { kind, text }] of own.entries()) {
-        if (kind === ' ') continue;
-        changed++;
-        // A changed line that is not a comment, or one that could move a template literal's
-        // boundary (an odd count of backticks, or a `${`), is runtime.
-        if (
-          !flags[i].comment ||
-          backticks(text) % 2 !== 0 ||
-          text.includes('${')
-        )
-          return null;
-      }
-      context[side] = flags.filter((_, i) => own[i].kind === ' ');
-      end[side] = flags.at(-1)?.open ?? false;
-    }
-    if (end['-'] !== end['+']) return null;
-    for (const [i, before] of context['-'].entries()) {
-      const after = context['+'][i];
-      if (before.comment !== after.comment || before.open !== after.open)
-        return null;
-    }
+    const r = checkHunk(lines, startsInsideBlock);
+    if (!r) return null;
+    changed += r.changed;
   }
   return changed > 0 ? hunks : null;
 }
@@ -177,6 +203,20 @@ const REGEX_AFTER_WORD = new Set([
   'yield',
   'await',
 ]);
+// The body a regex starting at `text[at]` would have, to the slash that would close it on the same
+// line (escapes and character classes honoured), or '' when no slash would close it.
+function regexBody(text, at) {
+  let inClass = false;
+  for (let i = at + 1; i < text.length && text[i] !== '\n'; i++) {
+    const ch = text[i];
+    if (ch === '\\') i++;
+    else if (ch === '[') inClass = true;
+    else if (ch === ']') inClass = false;
+    else if (ch === '/' && !inClass) return text.slice(at + 1, i);
+  }
+  return '';
+}
+
 export function lineStates(text) {
   const states = ['code'];
   // A stack of contexts: `code` frames carry the brace depth that closes a `${` back into its
@@ -280,6 +320,11 @@ export function lineStates(text) {
         mode = 'regex';
         continue;
       }
+      // After `)` or `}` a slash may be division or a regex (`if (x) /a`/.test(s)`). Read as
+      // division, unless read as a regex it would hold a quote or a backtick: then the file is
+      // unreadable, because the two readings disagree about what follows.
+      if ((prev === ')' || prev === '}') && /['"`]/.test(regexBody(text, i)))
+        return null;
     } else if (ch === "'") mode = 'single';
     else if (ch === '"') mode = 'double';
     else if (ch === '`') {
@@ -305,15 +350,18 @@ export function lineStates(text) {
   return states;
 }
 
-// Whether a comment-only patch is really comment-only once the whole file is known. A line that
-// starts with `//` inside a multi-line template literal is the template's text, not a comment, and
-// the backtick that opened the template can sit far above the hunk. So the head file is read and
-// every changed line is placed: an added line must start in code or in a block comment (and, if it
-// is not `//`, `/*` or blank itself, inside a block comment), and a removed line must sit where the
-// head file is in code or a block comment at the next line it still has. Changed lines carry no
-// `${` and an even count of backticks (commentOnlyHunks refuses the rest), so a removed line inside
-// a template would leave the line after it inside one too. Without the head file's text, or when
-// it does not read as well-formed, the answer is runtime.
+// Whether a comment-only patch is really comment-only once the whole file is known. The patch
+// cannot see what a hunk starts inside: a `//` line inside a multi-line template literal is the
+// template's text, and a block comment opened above the hunk changes what every line in it means.
+// So the head file is read with lineStates, and:
+//  - each hunk starts where the head file says, which must be code or a block comment. Lines
+//    above a hunk are the same in both files, and every earlier hunk ends both sides in the same
+//    state, so that is the old file's starting state too;
+//  - the hunk is read again from that state (checkHunk), and every line of its new side must
+//    start in the state the head file says it does, so a comment opened or closed mid-line, which
+//    the line reading cannot see, is caught;
+//  - a removed line must sit where the head file is in code or a block comment.
+// Without the head file's text, or when it does not lex, the answer is runtime.
 export function isCommentOnlyChange({ filename, status, patch }, headText) {
   if (!isScript(filename) || status === 'removed' || status === 'renamed')
     return false;
@@ -323,22 +371,23 @@ export function isCommentOnlyChange({ filename, status, patch }, headText) {
   if (!states) return false;
   const quiet = (s) => s === 'code' || s === 'block';
   for (const { newStart, lines } of hunks) {
-    let next = newStart; // the head-file line number the next context or added line has
-    for (const { kind, text } of lines) {
+    const first = states[newStart - 1];
+    if (!quiet(first) || !lines.some((l) => l.kind !== '-')) return false;
+    const r = checkHunk(lines, () => first === 'block');
+    if (!r) return false;
+    let next = newStart; // the head-file line number of the next context or added line
+    let k = 0; // its index on the new side
+    for (const { kind } of lines) {
+      const state = states[next - 1];
       if (kind === '-') {
         // The head file's state where this line used to be: the start of its next line.
-        if (!quiet(states[next - 1] ?? 'end')) return false;
+        if (!quiet(state)) return false;
         continue;
       }
-      if (kind === '+') {
-        const state = states[next - 1];
-        if (!quiet(state)) return false;
-        const t = text.trim();
-        const selfEvident =
-          t === '' || t.startsWith('//') || t.startsWith('/*');
-        if (!selfEvident && state !== 'block') return false;
-      }
+      if (!quiet(state) || (state === 'block') !== r.newSide[k].start)
+        return false;
       next++;
+      k++;
     }
   }
   return true;
