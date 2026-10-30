@@ -22,6 +22,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  isAnsweredIn,
   isDeclinedIn,
   mentions,
   parseDocSync,
@@ -380,6 +381,8 @@ const classify = (p) =>
 // A `## Doc-sync` section names the paths whose findings were comment, naming or
 // PR-body accuracy only. One PR spent two extra rounds because round 4's single
 // finding was a parameter named `seedable` while the caller passed `tickable`.
+// Entries are round-scoped like `## Settled` (see settled.mjs): a listed file's
+// LATER findings still count, or one listing hides every round after it.
 const docSynced = parseDocSync(prData.body);
 
 // ---- human review ----------------------------------------------------------
@@ -453,13 +456,25 @@ const isDeclined = (p, n) =>
     n,
     rounds.filter((r) => !r.errored),
   );
+// Doc-sync's bare entries are matched against fresh rounds only: a stale review counts for
+// nothing (§3), so the round that first flagged a file must not be one. Settled keeps its own
+// rule. Settled and Doc-sync lines are counted together against the round's findings.
+const isAnswered = (p, n) =>
+  isAnsweredIn(
+    [
+      { entries: settled, rounds: rounds.filter((r) => !r.errored) },
+      {
+        entries: docSynced,
+        rounds: rounds.filter((r) => !r.errored && !r.staleAtSubmit),
+      },
+    ],
+    p,
+    n,
+  );
 const roundWeight = (round) => {
   const counts = round.paths.some(
     (p) =>
-      classify(p) === 'product' &&
-      !isDeclined(p, round.n) &&
-      !isHandoff(p) &&
-      !(docSynced.has(p) || docSynced.has(p.split('/').pop())),
+      classify(p) === 'product' && !isAnswered(p, round.n) && !isHandoff(p),
   );
   if (!counts) return 'soft';
   // A reviewer that did not say `Changes recommended`, and raised nothing inline,
@@ -732,7 +747,7 @@ if (docSynced.size > 0) {
   say(
     true,
     'doc-sync         ',
-    `${[...docSynced].join(', ')} — findings there do not reset the counter §5, from the PR body's ## Doc-sync`,
+    `${[...docSynced.keys()].join(', ')} — findings there do not reset the counter §5 in the round each ## Doc-sync entry names (or the first round that flagged it); later findings count`,
   );
 }
 if (humanReviewer) {

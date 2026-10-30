@@ -75,12 +75,17 @@ const roundsOn = (line) => {
  * takes the union; one bare mention does not widen a path another line scopes.
  */
 export function parseSettled(body) {
+  return parseEntries(body, 'Settled');
+}
+
+// The same parse for any section whose entries answer findings round by round.
+function parseEntries(body, heading) {
   const settled = new Map();
   // One entry per Settled line naming the path: a decline answers one finding, so the
   // lines are counted (isDeclinedIn) rather than only unioned into the Map's value.
   const lines = new Map();
   Object.defineProperty(settled, 'lines', { value: lines });
-  for (const line of section(body, 'Settled').split('\n')) {
+  for (const line of section(body, heading).split('\n')) {
     const rounds = roundsOn(line);
     // A line naming one file twice is still one decline: counting each mention let a single
     // entry discount two findings on that file.
@@ -101,9 +106,18 @@ export function parseSettled(body) {
   return settled;
 }
 
-/** Paths a `## Doc-sync` section names. Unchanged: doc-sync is not round-scoped. */
+/**
+ * `## Doc-sync` entries, read and scoped exactly as `## Settled` ones (§5 says to name the paths
+ * "exactly as `## Settled` names declined ones"), so `isDeclinedIn` decides both.
+ *
+ * WHY ROUNDS. Doc-sync used to be a flat set of paths: once a file was listed, no finding on it
+ * counted in ANY round. A PR listed a file for one comment-accuracy fix and the gate then read
+ * eight trailing successful rounds where two were clean, because every later finding on that
+ * file, logic ones included, was discounted. An entry answers the doc-sync finding it was
+ * written for, in the round it names (or the first round that flagged the file), and nothing else.
+ */
 export function parseDocSync(body) {
-  return new Set(pathsIn(section(body, 'Doc-sync')));
+  return parseEntries(body, 'Doc-sync');
 }
 
 const base = (p) => p.split('/').pop();
@@ -123,18 +137,46 @@ export const mentions = (settled, path) => lookup(settled, path) !== undefined;
  * the file when an entry names no round.
  */
 export function isDeclinedIn(settled, path, n, rounds) {
-  const entry = lookup(settled, path);
-  if (entry === undefined) return false;
+  return isAnsweredIn([{ entries: settled, rounds }], path, n);
+}
+
+// Whether one section's entries apply to `path` in round `n`, and how many of its lines do.
+function answers({ entries, rounds }, path, n) {
+  const entry = lookup(entries, path);
+  if (entry === undefined) return { applies: false, count: 0 };
   const first = rounds.find((r) => r.paths.includes(path));
   const applies = (e) =>
     e !== null ? e.has(n) : first !== undefined && first.n === n;
-  if (!applies(entry)) return false;
+  if (!applies(entry)) return { applies: false, count: 0 };
+  const key = entries.lines?.has(path) ? path : base(path);
+  return {
+    applies: true,
+    count: (entries.lines?.get(key) ?? []).filter(applies).length,
+  };
+}
+
+/**
+ * Whether every finding on `path` in round `n` is answered by the given sections together
+ * (`## Settled` and `## Doc-sync`), each `{ entries, rounds }` with the rounds its bare
+ * entries are matched against. Lines are counted ACROSS sections: a round with one finding
+ * declined in Settled and one fixed under Doc-sync on the same file is fully answered,
+ * though neither section answers both.
+ */
+export function isAnsweredIn(sections, path, n) {
+  let applies = false;
+  let answered = 0;
+  for (const section of sections) {
+    const a = answers(section, path, n);
+    applies ||= a.applies;
+    answered += a.count;
+  }
+  if (!applies) return false;
   // A decline answers ONE finding, never its file: when the round raised more findings
-  // on the path than Settled lines answer it, the rest still count (one PR: a fixed
-  // Medium rode a decline on the same file and the bar read met).
-  const raised = rounds.find((r) => r.n === n)?.findings?.[path];
+  // on the path than the lines answer, the rest still count (one PR: a fixed Medium
+  // rode a decline on the same file and the bar read met).
+  const raised = sections
+    .map((x) => x.rounds.find((r) => r.n === n))
+    .find(Boolean)?.findings?.[path];
   if (raised === undefined) return true;
-  const key = settled.lines?.has(path) ? path : base(path);
-  const answered = (settled.lines?.get(key) ?? []).filter(applies).length;
   return raised <= answered;
 }
