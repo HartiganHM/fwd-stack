@@ -460,7 +460,13 @@ const RISKY_PATH =
   /(^|\/)(drizzle|migrations?|prisma|db|schema)(\/|\.)|(^|\/)(auth|session|security|billing|payments?|credits?|stripe|webhooks?)(\/|[-_.])|(^|\/)(proxy|middleware)\.[jt]s$|(^|\/)app\/api\//i;
 const riskyPaths = files
   .map((f) => f.filename)
-  .filter((p) => !isDoc(p) && !nonRuntime.has(p) && !/\.(test|spec)\.[cm]?[jt]sx?$/.test(p) && RISKY_PATH.test(p));
+  .filter(
+    (p) =>
+      !isDoc(p) &&
+      !nonRuntime.has(p) &&
+      !/\.(test|spec)\.[cm]?[jt]sx?$/.test(p) &&
+      RISKY_PATH.test(p),
+  );
 const risky = destructive || riskyPaths.length > 0;
 const claudeReviewed = /^##\s+Claude review\b/im.test(prData.body ?? '');
 // Test, probe, script or copy-only PRs take no review at all, like doc-only ones (owner ruling 2026-10-30).
@@ -468,7 +474,10 @@ const noReview =
   !risky &&
   (productIsTooling ||
     (files.some((f) => isCopyPath(f.filename)) &&
-      files.every((f) => isCopyPath(f.filename) || isTooling(f.filename) || isDoc(f.filename))));
+      files.every(
+        (f) =>
+          isCopyPath(f.filename) || isTooling(f.filename) || isDoc(f.filename),
+      )));
 
 // Errored rounds are skipped when finding the round that first flagged a file,
 // the same as everywhere else they are scored.
@@ -860,8 +869,21 @@ const barMet =
     : risky
       ? scored.length >= 1
       : claudeReviewed || scored.length >= 1;
-say(true, 'copilot scope     ', risky ? `RISKY: ${riskyPaths.slice(0, 4).join(', ') || 'destructive diff'}; one Copilot round` : docOnly || noReview ? 'doc/test/script/copy-only: no review' : `not risky: Claude review${claudeReviewed ? ' recorded' : ' needed'}, no Copilot`);
-if (budgetStop) say(false, 'budget stop      ', '`## Copilot budget stop` in the body: merging with no Copilot round (owner ruling 2026-10-30)');
+say(
+  true,
+  'copilot scope     ',
+  risky
+    ? `RISKY: ${riskyPaths.slice(0, 4).join(', ') || 'destructive diff'}; one Copilot round`
+    : docOnly || noReview
+      ? 'doc/test/script/copy-only: no review'
+      : `not risky: Claude review${claudeReviewed ? ' recorded' : ' needed'}, no Copilot`,
+);
+if (budgetStop)
+  say(
+    false,
+    'budget stop      ',
+    '`## Copilot budget stop` in the body: merging with no Copilot round (owner ruling 2026-10-30)',
+  );
 // §7's hard stop, computed here rather than only reported below, because it is
 // a third door out of the merge bar and not merely a warning.
 //

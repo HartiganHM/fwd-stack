@@ -14,11 +14,11 @@ Copilot review is billed per review to the org's AI credits. Measured on the-99:
 review at Balanced and 4,228 reviews in October. The org now runs Lite effort with a $75 monthly
 budget and a hard stop. So:
 
-| PR kind | Review | Merge bar |
-| --- | --- | --- |
-| **Risky code**: destructive diff, migrations/schema, DB layer, auth/session/proxy, payments/credits/billing/webhooks, API routes, security | **One Copilot round.** Fix every valid finding. No confirmation rounds, no re-requests. | 1 scored round + green CI |
-| **Other code** | **Claude review, no Copilot.** Run `/code-review` on the PR diff, fix what it finds, and record it in the PR body under `## Claude review` (what ran, what was fixed). | `## Claude review` + green CI |
-| **Doc, design, test, probe, script or copy-only** | None. Read your own diff. | Green CI |
+| PR kind                                                                                                                                    | Review                                                                                                                                                                 | Merge bar                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| **Risky code**: destructive diff, migrations/schema, DB layer, auth/session/proxy, payments/credits/billing/webhooks, API routes, security | **One Copilot round.** Fix every valid finding. No confirmation rounds, no re-requests.                                                                                | 1 scored round + green CI     |
+| **Other code**                                                                                                                             | **Claude review, no Copilot.** Run `/code-review` on the PR diff, fix what it finds, and record it in the PR body under `## Claude review` (what ran, what was fixed). | `## Claude review` + green CI |
+| **Doc, design, test, probe, script or copy-only**                                                                                          | None. Read your own diff.                                                                                                                                              | Green CI                      |
 
 - The gate classifies the PR (`copilot scope` line) and enforces this table. It refuses a second
   Copilot request on a risky PR, and any request on a non-risky one.
