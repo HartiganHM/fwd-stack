@@ -48,8 +48,8 @@ Use it two ways:
 - [ ] **Previews off when the project is created.** Right after creating it, turn preview deployments off with the API, then read the project back and check the field is `true`:
 
   ```bash
-  npx vercel api /v9/projects/<name> -X PATCH -F previewDeploymentsDisabled=true --scope <team>
-  npx vercel api /v9/projects/<name> --scope <team> | jq .previewDeploymentsDisabled
+  pnpm dlx vercel api /v9/projects/<name> -X PATCH -F previewDeploymentsDisabled=true --scope <team>
+  pnpm dlx vercel api /v9/projects/<name> --scope <team> | jq .previewDeploymentsDisabled
   ```
 
   Turn previews back on only if the project actually uses them. Leave git deployments off too unless the project deploys from git (`git.deploymentEnabled: false`, or `gitProviderOptions.createDeployments: "disabled"`). _Why:_ every branch push otherwise builds, and Build CPU is billed. Previews have had to be switched off by hand after the fact more than once.
