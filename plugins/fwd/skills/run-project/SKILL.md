@@ -77,8 +77,9 @@ STOP AND REPORT if it needs: a design call, a product call, spend, a new feature
   and keep working on the parts it does not affect.
 STANDING RULES: the project's agent docs; a feature branch in a worktree from origin/main,
   never main, and no --delete-branch from a worktree; production and staging are read-only;
-  list every scratch database branch you create; full pr-review on every PR;
-  copy through copy-review.
+  list every scratch database branch you create; name scratch files after their PR or task
+  (pr<N>-body.md), never a generic name, and read a body file back before --body-file;
+  full pr-review on every PR; copy through copy-review.
 COORDINATION: <other lanes on nearby files, their branches, who rebases; reserved
   migration numbers / product-call numbers>
 STOPPING POINT: <"merged and production health OK" | "plan sent to me" | "report before building">
