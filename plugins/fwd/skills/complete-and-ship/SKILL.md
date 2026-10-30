@@ -447,6 +447,10 @@ If the project has a PR template (`.github/pull_request_template.md` or a file u
 `.github/PULL_REQUEST_TEMPLATE/`), use it as the base and fold the sections below into it.
 If it has none, use the sections below as they are. Fill in all sections:
 
+If you write the body to a file, name it after the PR or branch (`<branch>-body.md`), never a
+generic `pr-body.md`, because subagents in one session share one scratchpad; read it back before
+any `--body-file` and check it is this PR's body.
+
 ```bash
 gh pr create \
   --title "<conventional-commit-style title>" \

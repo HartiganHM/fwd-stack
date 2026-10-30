@@ -44,6 +44,10 @@ before anything else: its rules add to these and win where they conflict.
 - **Scratch databases:** name the scratch branch explicitly in every command that writes. Never
   let a helper pick its target up from `.env`: one once wrote to the shared development database
   that way. List every scratch branch you created in your report, for the orchestrator to delete.
+- **Scratch files:** name every PR body, ledger or notes file after its PR or task
+  (`pr<N>-body.md`, `<branch>-notes.md`), never a generic name, since subagents in one session
+  share one scratchpad. Before a `gh pr edit --body-file`, read the file back and check it is this
+  PR's body.
 - **Report state truthfully.** A "don't merge" from the orchestrator can arrive after you merged.
   Say what happened; do not undo it unasked.
 

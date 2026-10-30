@@ -429,9 +429,14 @@ body was never written, and rounds 2 and 3 re-raised the same objections into a
 `## Settled` section that did not exist.
 
 ```bash
-gh api -X PATCH repos/OWNER/REPO/pulls/N -f body="$(cat body.md)"
+gh api -X PATCH repos/OWNER/REPO/pulls/N -f body="$(cat prN-body.md)"
 gh pr view N --json body --jq .body | grep -c "<a phrase from the entry>"
 ```
+
+Name every scratch file after its PR or task (`pr<N>-body.md`, `<branch>-notes.md`), never a
+generic `pr-body.md`: subagents in one session share one scratchpad, and one agent once pushed
+another PR's body onto its own, twice. Before writing a body from a file (REST or `--body-file`), read the file back and
+check it is this PR's.
 
 The read-back is the same rule as §1's "a 200 is not proof", applied to the PR
 body: the mechanism §6 depends on is invisible when it fails. A repeat of a listed finding gets a one-line pointer to
