@@ -19,7 +19,7 @@
   "devDependencies": {
     "@fwd-stack/eslint-config": "workspace:*",
     "@fwd-stack/prettier-config": "workspace:*",
-    "eslint": "^9.39.5",
+    "eslint": "^10.13.0",
     "prettier": "3.9.6",
     "typescript": "^5.9.0"
   }
