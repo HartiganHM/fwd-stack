@@ -93,29 +93,37 @@ function commentFlags(lines) {
   let inBlock = startsInsideBlock(lines);
   return lines.map(({ text }) => {
     const t = text.trim();
+    let comment = false;
     if (inBlock) {
       const close = t.indexOf('*/');
       if (close !== -1) inBlock = false;
       // Code after the comment closes (`*/ run()`) is code.
-      return close === -1 || t.slice(close + 2).trim() === '';
-    }
-    if (t === '' || t.startsWith('//')) return true;
-    if (t.startsWith('/*')) {
+      comment = close === -1 || t.slice(close + 2).trim() === '';
+    } else if (t === '' || t.startsWith('//')) comment = true;
+    else if (t.startsWith('/*')) {
       const close = t.indexOf('*/', 2);
       if (close === -1) inBlock = true;
-      return close === -1 || t.slice(close + 2).trim() === '';
+      comment = close === -1 || t.slice(close + 2).trim() === '';
     }
-    return false;
+    // `open`: whether a block comment is still open after this line.
+    return { comment, open: inBlock };
   });
 }
 
 // Whether every changed line of a JavaScript or TypeScript patch is a comment or blank, read from
 // the patch alone. Returns the hunks (for the template-literal check) or null.
+//
+// Changed lines are not enough. Adding `/*` above unchanged code and `*/` below it comments the
+// code out without one changed line being code. So every unchanged line must read the same on both
+// sides, comment or code, with a block comment open after it or not, and each side must end the
+// hunk in the same state, so the lines after the hunk read the same too.
 export function commentOnlyHunks(patch) {
   const hunks = parsePatch(patch);
   if (!hunks) return null;
   let changed = 0;
   for (const { lines } of hunks) {
+    const context = {};
+    const end = {};
     for (const side of ['-', '+']) {
       const own = lines.filter((l) => l.kind === ' ' || l.kind === side);
       const flags = commentFlags(own);
@@ -124,9 +132,21 @@ export function commentOnlyHunks(patch) {
         changed++;
         // A changed line that is not a comment, or one that could move a template literal's
         // boundary (an odd count of backticks, or a `${`), is runtime.
-        if (!flags[i] || backticks(text) % 2 !== 0 || text.includes('${'))
+        if (
+          !flags[i].comment ||
+          backticks(text) % 2 !== 0 ||
+          text.includes('${')
+        )
           return null;
       }
+      context[side] = flags.filter((_, i) => own[i].kind === ' ');
+      end[side] = flags.at(-1)?.open ?? false;
+    }
+    if (end['-'] !== end['+']) return null;
+    for (const [i, before] of context['-'].entries()) {
+      const after = context['+'][i];
+      if (before.comment !== after.comment || before.open !== after.open)
+        return null;
     }
   }
   return changed > 0 ? hunks : null;

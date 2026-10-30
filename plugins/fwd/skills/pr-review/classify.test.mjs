@@ -377,3 +377,39 @@ test('a doc PR with a comment-only script and a version bump is doc-only; with c
   );
   assert.equal(isDocOnlyChange([], new Set()), false);
 });
+
+test('a block-comment delimiter added or removed around unchanged code is runtime', () => {
+  // `/*` and `*/` added around `run();`: every changed line is a comment, the code is now one.
+  const disabled = [
+    '@@ -1,3 +1,5 @@',
+    ' const a = 1;',
+    '+/*',
+    ' run();',
+    '+*/',
+    ' const b = 2;',
+  ].join('\n');
+  assert.equal(commentOnlyHunks(disabled), null);
+  // The reverse: removing them brings the code back.
+  const enabled = [
+    '@@ -1,5 +1,3 @@',
+    ' const a = 1;',
+    '-/*',
+    ' run();',
+    '-*/',
+    ' const b = 2;',
+  ].join('\n');
+  assert.equal(commentOnlyHunks(enabled), null);
+  // An opener at the end of a hunk, with no line after it, comments out what follows the hunk.
+  const trailingOpen = ['@@ -1,1 +1,2 @@', ' const a = 1;', '+/*'].join('\n');
+  assert.equal(commentOnlyHunks(trailingOpen), null);
+  // A whole JSDoc block added between two lines of code changes nothing around it.
+  const jsdoc = [
+    '@@ -1,2 +1,5 @@',
+    ' const a = 1;',
+    '+/**',
+    '+ * b',
+    '+ */',
+    ' const b = 2;',
+  ].join('\n');
+  assert.ok(commentOnlyHunks(jsdoc));
+});
