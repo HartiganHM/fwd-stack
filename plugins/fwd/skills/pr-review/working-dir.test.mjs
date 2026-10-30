@@ -80,6 +80,16 @@ test('a cd on one branch of ||, behind a prefix or keyword, in eval, or a source
     assert.deepEqual(at(cmd), { unknown: true }, cmd);
 });
 
+test('shell grammar the walker does not model makes a directory-changing line unknown', () => {
+  for (const cmd of [
+    "cd /repo-a && builtin eval 'cd /repo-b' && gh pr merge 42",
+    'cd /repo-a && if true; then gh pr merge 42; fi',
+    'cd /repo-a && for x in 1; do gh pr merge 42; done',
+    'cd /repo-a && bash -c \'command eval "cd /b" && gh pr merge 42\'',
+  ])
+    assert.deepEqual(at(cmd), { unknown: true }, cmd);
+});
+
 test('a backgrounded list, or a moving wrapper sharing its element, is unknown', () => {
   for (const cmd of [
     // `&` backgrounds `cd /repo-b && sleep 1`, so the merge stays where it was.

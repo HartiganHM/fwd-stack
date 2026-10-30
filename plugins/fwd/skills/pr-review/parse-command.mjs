@@ -568,9 +568,45 @@ export function workingDir(cmd, cwd, home = homedir()) {
   return { dir: where.dir === cwd ? null : where.dir };
 }
 
+// Shell grammar this walker does not model: conditionals, loops, groups, functions, and the
+// builtins that run text or a command in this same shell. On a line that changes directory, any of
+// them as a word makes the directory unknown, rather than one more shape to chase
+// (`builtin eval 'cd /b'`, `if …; then cd /b; fi`).
+const UNMODELLED = new Set([
+  'eval',
+  'builtin',
+  'command',
+  'exec',
+  'source',
+  'if',
+  'then',
+  'elif',
+  'else',
+  'fi',
+  'while',
+  'until',
+  'do',
+  'done',
+  'for',
+  'case',
+  'esac',
+  'select',
+  'function',
+  'coproc',
+  '{',
+  '}',
+  '!',
+]);
+
 function walkDirs(cmd, cwd, home, depth) {
   const unknown = { unknown: true };
   if (depth > 3) return unknown;
+  if (
+    simpleCommands(cmd).some(
+      (words) => words.some((w) => UNMODELLED.has(w)) || words[0] === '.',
+    )
+  )
+    return unknown;
   // `cd /a || cd /b; <gated>` runs in either directory, depending on the first `cd`.
   const branches = /\|\|/.test(unquoted(cmd));
   // A single `&` backgrounds the whole and-or list before it (`cd /b && make & <gated>`), so a
