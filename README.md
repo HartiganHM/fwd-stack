@@ -85,7 +85,7 @@ marketplace first:
 | `epic-run`           | Runs a multi-PR feature epic end to end with per-PR and whole-vertical gates                                   |
 | `feature-run-report` | The fixed-shape report at the end of an unattended run                                                         |
 | `progress-chart`     | Status as a chart: one bar per named feature line from merged PRs, detail per group on request                 |
-| `usage-report`       | Splits the weekly Claude allowance by project, model and session, from local transcripts                       |
+| `usage-report`       | Splits recorded Claude Code usage (weighted tokens) by project, model and session                              |
 | `copy-review`        | Writing and reviewing customer-facing copy against the project's voice and locked vocabulary                   |
 | `infra-setup`        | Hosting, database and monitoring defaults for a new or audited app, with running cost                          |
 | `backlog-audit`      | Audits, triages and prioritises the GitHub Issues backlog, and governs intake                                  |
