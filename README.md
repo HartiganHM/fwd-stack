@@ -136,8 +136,10 @@ follow-up PR, then run `machine/switch.sh` again: it updates the plugin, re-poin
 
 ```sh
 pnpm install
-pnpm format:check && pnpm typecheck && pnpm lint && pnpm test
+pnpm format:check && pnpm typecheck && pnpm lint
 ```
+
+That is the whole local gate before a push. Tests run in CI only (the `pr-review` skill, §5).
 
 Raising a version: change `baseline.json` first, then each project. A config change that would
 fail an existing project lands with that project's fix PR linked in the description.

@@ -288,7 +288,7 @@ nothing.
 severity floor decides whether another review is owed — nothing more. One round-1
 probe finding was a latent false failure that would have fired on any list holding
 an item with no image; it was worth more than most Mediums. Fix these properly, sweep
-their class, mutation-check them. Just do not buy a round with them.
+their class, mutation-check them in CI. Just do not buy a round with them.
 
 A **successful round** is one with no new inline comment and no new suppressed
 comment, or only Low/Nit ones — regardless of the header.
@@ -328,6 +328,20 @@ discount them rather than counting them against the round.
 | Critical / High — correctness, security, broken contracts | Fix → gate → push → re-request                       |
 | Medium — naming, missing validation, minor logic          | Fix → gate → push → re-request                       |
 | Low / Nit                                                 | Apply if valid and cheap; does not reset the counter |
+
+**"Gate" before a push means typecheck and lint, never tests.** The local gate before every push
+is typecheck + lint (plus a format check where the project has one), then
+`git fetch origin && git rebase origin/main`. No tests of any kind run locally: not the full
+suite, not targeted tests, not a local mutation check, and no local production or stub build.
+CI is the only test gate, and a PR merges only on green CI, which the merge gate already enforces
+(red or pending CI blocks it, §8). The reason, stated once: four lanes each running a
+~12,900-test suite locally pushed machine load past 150, and gates timed out. Every other skill
+that names a pre-push gate means this one.
+
+The CI shape this assumes: related or selected tests on PRs and pushes to main, and the full suite
+nightly on main (on a schedule and by `workflow_dispatch`) as the safety net for that selection.
+The full suite also runs on lockfile, config, CI or dependency changes, or when a PR carries a
+`ci:full` label. A red nightly goes to the orchestrator.
 
 - **Fix every valid comment, including nits.** Never offer a "fix the bug, defer
   the nits" path. Deferrals need explicit user approval before the PR opens.
@@ -373,11 +387,13 @@ discount them rather than counting them against the round.
   re-request. Never fix-push-fix-push within a round. One PR ran 22 commits
   against 37 rounds — roughly one fix per round, and one of those commits was
   titled "Two probe bugs I shipped one round ago."
-- **Mutation-check every fix that ships with a test.** Revert the fix, confirm
-  the test fails, restore. ~30 seconds, and the only thing that proves the test
-  measures anything. Two vacuous tests were caught this way in one run —
-  including one asserting a `requestAnimationFrame` callback without flushing
-  one, which passed with the fix removed. Required, not a good habit.
+- **Mutation-check a fix that ships with a test, in CI or not at all.** Push a
+  commit that deliberately breaks the fix, confirm CI fails on the new test, then
+  push the revert. It is the only thing that proves the test measures anything:
+  two vacuous tests were caught this way in one run, including one asserting a
+  `requestAnimationFrame` callback without flushing one, which passed with the
+  fix removed. If a CI round trip is not worth it for this fix, skip the check and
+  do not claim it. Never revert and run the test locally (the local gate above).
 - **Sweep a class by grep, not by reading — and a class is not only a nit.**
   Copilot reports one occurrence of a pattern it could report twenty times, and
   each unswept sibling costs a full round. On the first spelling / wording /
@@ -909,7 +925,7 @@ push, open a PR, or start a round until the designs are ready and it's asked for
 | "The probe has a real bug, that's a finding"                       | A probe cannot break production. Fix it, no new round. §4.                            |
 | "Clean round on the delete path, we're done"                       | Destructive paths need clean-after-clean. §8.                                         |
 | "I read the file, the class is swept"                              | Swept means a grep produced the claim. §5.                                            |
-| "The test passes, the fix works"                                   | Revert the fix and confirm it fails. §5.                                              |
+| "The test passes, the fix works"                                   | Push a commit that breaks the fix; CI must go red. §5.                                |
 | "Bar's met but I'll check before merging"                          | Merge. Open questions go in the body. §8.                                             |
 | "I'll stack the next slice on this branch"                         | No stacked PRs. §10.                                                                  |
 | "A subagent can run the review cycle"                              | The wait exceeds its window. §2.                                                      |

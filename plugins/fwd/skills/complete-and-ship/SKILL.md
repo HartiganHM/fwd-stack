@@ -36,18 +36,18 @@ digraph complete_and_ship {
     "All states reachable?" -> "Any tasks remaining?" [label="yes — continue UI tasks"];
     "All states reachable?" -> "Fix API or surface to user" [label="no — stop"];
     "Fix API or surface to user" -> "API contract verification gate";
-    "Any tasks remaining?" -> "Type-check + lint + test" [label="no"];
-    "Type-check + lint + test" -> "Errors?";
+    "Any tasks remaining?" -> "Type-check + lint" [label="no"];
+    "Type-check + lint" -> "Errors?";
     "Errors?" -> "Fix and re-check" [label="yes"];
     "Errors?" -> "Compare to spec + design assets" [label="no"];
-    "Fix and re-check" -> "Type-check + lint + test";
+    "Fix and re-check" -> "Type-check + lint";
     "Compare to spec + design assets" -> "Gaps found?";
     "Gaps found?" -> "Implement gaps, re-check" [label="yes — always implement"];
     "Gaps found?" -> "Any deferrals?" [label="no"];
     "Any deferrals?" -> "Stop — get user approval" [label="yes"];
     "Stop — get user approval" -> "Scan for new env vars" [label="approved"];
     "Any deferrals?" -> "Scan for new env vars" [label="no"];
-    "Implement gaps, re-check" -> "Type-check + lint + test";
+    "Implement gaps, re-check" -> "Type-check + lint";
     "Scan for new env vars" -> "Diff touches customer-facing copy?";
     "Diff touches customer-facing copy?" -> "Run copy-review skill on the diff" [label="yes"];
     "Diff touches customer-facing copy?" -> "Open PR (with env vars + deferrals section)" [label="no"];
@@ -258,16 +258,18 @@ Mark each state one of:
 
 ### 3. Quality gate
 
-Run all three checks for every app touched by the plan, using the project's own commands (the
-form below is a pnpm workspace; the extension names others):
+Run typecheck and lint (plus a format check where the project has one) for every app touched by
+the plan, using the project's own commands (the form below is a pnpm workspace; the extension
+names others):
 
 ```bash
 pnpm --filter <app> typecheck
 pnpm --filter <app> lint
-pnpm --filter <app> test
 ```
 
-Fix any errors before continuing. Do not proceed to the spec comparison with type errors or failing tests.
+Do not run tests or a production build locally: CI is the only test gate (pr-review §5). Write
+the tests with the code and let CI run them. Fix any errors before continuing. Do not proceed to
+the spec comparison with type or lint errors.
 
 ---
 
@@ -456,8 +458,7 @@ gh pr create \
 ## Test plan
 - [ ] Type-check passes
 - [ ] Lint passes
-- [ ] Tests pass
-- [ ] CI passes
+- [ ] CI passes (tests run in CI only)
 - [ ] Manual smoke: <what to click/verify>
 
 ## Spec coverage
@@ -503,7 +504,7 @@ Two things this skill adds on top:
 ### 8. Triage all comments
 
 Triage per the `pr-review` skill — severity table, the nit/sweep rules, the
-mutation check on every fix that ships with a test, and the `## Settled`
+CI-only mutation check on a fix that ships with a test, and the `## Settled`
 push-back section in the PR body. The convergence rule that matters most here:
 **three consecutive rounds of findings on the same function or component means
 the next action is a scope decision, not another fix.**
@@ -564,7 +565,7 @@ If any check fails:
 
 1. Read the failure output: `gh run view <RUN_ID> --log-failed`
 2. Fix the root cause in source
-3. Re-run the local quality gate (Step 3) to confirm the fix
+3. Re-run the local quality gate (Step 3); the test itself is confirmed by CI, not locally
 4. Commit and push
 5. Return to the top of Step 10 and re-watch
 
@@ -721,7 +722,7 @@ Proceed without confirmation for:
 
 - Reading any file in the repo or worktree
 - Editing source files, config files, CSS, tests
-- Running `pnpm`, `tsc`, `eslint`, `vitest`, `jest`, `git add/commit/push`
+- Running `pnpm`, `tsc`, `eslint`, `git add/commit/push` (never a local test run; pr-review §5)
 - Running `gh pr create`, `gh pr edit`, `gh pr view`, `gh pr checks`, `gh run view`
 - Merging the PR once pr-review's gate allows it (Step 10)
 - Creating or updating files that are part of the plan
