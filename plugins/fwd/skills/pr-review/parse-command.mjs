@@ -453,9 +453,14 @@ const CHANGES_DIR =
 // The elements of a command list: the text between `&&`, `||`, `;` and newlines outside quotes,
 // parentheses and backticks. A `cd` in one element applies to the elements after it, because each
 // of those runs in the same shell; a pipeline, subshell or background job stays inside its element.
-export function listElements(cmd) {
+export const listElements = (cmd) => listWithOperators(cmd).map((e) => e.text);
+
+// The same elements, each with the operator that joined it to the one before: `''` for the first,
+// `&&`, `||`, or `;` (a newline too).
+export function listWithOperators(cmd) {
   const out = [];
   let start = 0;
+  let op = '';
   let quote = null;
   let depth = 0;
   let tick = false;
@@ -483,14 +488,26 @@ export function listElements(cmd) {
     else if (depth === 0 && !tick) {
       const two = cmd.slice(i, i + 2);
       if (two === '&&' || two === '||' || ch === ';' || ch === '\n') {
-        out.push(cmd.slice(start, i));
+        // A line break straight after `&&` or `||` continues the list; it is not a `;`.
+        if (
+          ch === '\n' &&
+          (op === '&&' || op === '||') &&
+          cmd.slice(start, i).trim() === ''
+        ) {
+          start = i + 1;
+          continue;
+        }
+        out.push({ text: cmd.slice(start, i), op });
+        op = two === '&&' || two === '||' ? two : ';';
         if (two === '&&' || two === '||') i++;
         start = i + 1;
       }
     }
   }
-  out.push(cmd.slice(start));
-  return out.map((e) => e.trim()).filter(Boolean);
+  out.push({ text: cmd.slice(start), op });
+  return out
+    .map((e) => ({ ...e, text: e.text.trim() }))
+    .filter((e) => e.text !== '');
 }
 
 // The text outside quotes, for finding operators.
@@ -566,7 +583,16 @@ function walkDirs(cmd, cwd, home, depth) {
     gatedDir = d;
     return true;
   };
-  for (const element of listElements(cmd)) {
+  // `make && cd /b; <gated>`: the cd runs only if `make` succeeded, and the gated command runs
+  // either way, so after the `&&` chain holding such a cd ends, the directory is unknown. Inside
+  // the chain it is not: `make && cd /b && <gated>` runs only where the cd took it.
+  let conditionalCd = false;
+  let unsure = false;
+  for (const { text: element, op } of listWithOperators(cmd)) {
+    if (op !== '&&' && conditionalCd) {
+      unsure = true;
+      conditionalCd = false;
+    }
     const commands = simpleCommands(element);
     const gated = parseCommand(element).length > 0;
     const words = commands.length === 1 ? commands[0] : null;
@@ -582,6 +608,9 @@ function walkDirs(cmd, cwd, home, depth) {
       // A relative `cd` with no session directory to start from cannot be resolved.
       if (!isAbsolute(path) && !dir) return unknown;
       dir = resolve(dir ?? '/', path);
+      if (op === '&&') conditionalCd = true;
+      // A cd that always runs, to an absolute path, settles the directory again.
+      else if (isAbsolute(path)) unsure = false;
       continue;
     }
     // A shell wrapper (`bash -c 'cd x && …'`): its `cd` ends with it, and its gated commands run
@@ -598,7 +627,7 @@ function walkDirs(cmd, cwd, home, depth) {
       if (isEval(words)) return unknown;
       const sub = walkDirs(inner, dir, home, depth + 1);
       if (sub.unknown) return unknown;
-      if (sub.dir !== null && !ranIn(sub.dir)) return unknown;
+      if (sub.dir !== null && (unsure || !ranIn(sub.dir))) return unknown;
       continue;
     }
     if (commands.some(mayChangeDir)) {
@@ -606,7 +635,7 @@ function walkDirs(cmd, cwd, home, depth) {
       if (!gated && element.startsWith('(')) continue;
       return unknown;
     }
-    if (gated && !ranIn(dir)) return unknown;
+    if (gated && (unsure || !ranIn(dir))) return unknown;
   }
   return { dir: gatedDir };
 }

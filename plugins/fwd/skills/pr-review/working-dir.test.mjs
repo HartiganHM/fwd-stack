@@ -4,7 +4,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { listElements, workingDir } from './parse-command.mjs';
+import {
+  listElements,
+  listWithOperators,
+  workingDir,
+} from './parse-command.mjs';
 
 const home = '/home/u';
 const at = (cmd, cwd = '/work') => workingDir(cmd, cwd, home);
@@ -85,6 +89,28 @@ test('a backgrounded list, or a moving wrapper sharing its element, is unknown',
     assert.deepEqual(at(cmd), { unknown: true }, cmd);
   // Redirections are not backgrounding.
   assert.deepEqual(at('cd /x && gh pr merge 42 2>&1 | tail -3'), { dir: '/x' });
+});
+
+test('a cd that runs only if the command before it succeeded settles nothing after its chain', () => {
+  for (const cmd of [
+    // The merge runs whether or not the cd did.
+    'false && cd /repo-b; gh pr merge 42',
+    'false && cd /repo-b\ngh pr merge 42',
+    // A line break straight after && continues the chain.
+    'false &&\ncd /repo-b; gh pr merge 42',
+  ])
+    assert.deepEqual(at(cmd), { unknown: true }, cmd);
+  // Inside the chain, the merge runs only where the cd took it.
+  assert.deepEqual(at('make && cd /x && gh pr merge 42'), { dir: '/x' });
+  // A cd that always runs, to an absolute path, settles it again.
+  assert.deepEqual(at('false && cd /b; cd /c; gh pr merge 42'), { dir: '/c' });
+});
+
+test('elements carry the operator that joined them', () => {
+  assert.deepEqual(
+    listWithOperators('a && b || c; d\ne &&\nf').map((e) => e.op),
+    ['', '&&', '||', ';', ';', '&&'],
+  );
 });
 
 test('a separator inside a shell comment separates nothing', () => {
