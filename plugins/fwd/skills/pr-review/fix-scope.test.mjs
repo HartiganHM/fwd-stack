@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { MAX_COMPARE_FILES, fixPaths, fixWeight } from './fix-scope.mjs';
 
 const isProduct = (p) => p.startsWith('src/');
+const one = { parents: [{}] };
 const weigh = (over) =>
   fixWeight({
     anchorWeight: 'substantive',
@@ -19,6 +20,7 @@ test('an ahead comparison lists the paths the fix changed, a rename on both side
   assert.deepEqual(
     fixPaths({
       status: 'ahead',
+      commits: [one],
       files: [
         { filename: 'src/a.ts' },
         { filename: 'tests/b.test.ts', previous_filename: 'tests/old.test.ts' },
@@ -35,7 +37,8 @@ test('a comparison that is not the fix alone says nothing', () => {
   assert.equal(fixPaths({ status: 'diverged', files: [] }), null);
   assert.equal(fixPaths({ status: 'behind', files: [] }), null);
   assert.equal(fixPaths({ status: 'identical', files: [] }), null);
-  assert.equal(fixPaths({ status: 'ahead' }), null);
+  assert.equal(fixPaths({ status: 'ahead', commits: [one] }), null);
+  assert.equal(fixPaths({ status: 'ahead', files: [] }), null);
   assert.equal(fixPaths(null), null);
 });
 
@@ -43,10 +46,29 @@ test('a file list at the API cap may be cut short, so it says nothing', () => {
   const files = Array.from({ length: MAX_COMPARE_FILES }, (_, i) => ({
     filename: `docs/${i}.md`,
   }));
-  assert.equal(fixPaths({ status: 'ahead', files }), null);
+  assert.equal(fixPaths({ status: 'ahead', commits: [one], files }), null);
   assert.equal(
-    fixPaths({ status: 'ahead', files: files.slice(1) })?.length,
+    fixPaths({ status: 'ahead', commits: [one], files: files.slice(1) })
+      ?.length,
     MAX_COMPARE_FILES - 1,
+  );
+});
+
+test('a merge of main into the branch, or a cut-short commit list, says nothing', () => {
+  // The merge base is still the reviewed commit, so the compare stays `ahead` and lists main's
+  // files as if they were the fix.
+  const files = [{ filename: 'docs/a.md' }];
+  assert.equal(
+    fixPaths({ status: 'ahead', commits: [one, { parents: [{}, {}] }], files }),
+    null,
+  );
+  assert.equal(
+    fixPaths({ status: 'ahead', total_commits: 300, commits: [one], files }),
+    null,
+  );
+  assert.deepEqual(
+    fixPaths({ status: 'ahead', total_commits: 1, commits: [one], files }),
+    ['docs/a.md'],
   );
 });
 
@@ -71,12 +93,6 @@ test('when the fix cannot be read, the anchors decide', () => {
 });
 
 test('a round with every finding answered, or only suppressed ones, fixed nothing that counts', () => {
-  assert.equal(
-    weigh({ anchorWeight: 'soft', open: 0, paths: ['src/a.ts'] }),
-    'soft',
-  );
-  assert.equal(
-    weigh({ anchorWeight: 'soft', describing: true, paths: ['src/a.ts'] }),
-    'soft',
-  );
+  assert.equal(weigh({ open: 0, paths: ['src/a.ts'] }), 'soft');
+  assert.equal(weigh({ describing: true, paths: ['src/a.ts'] }), 'soft');
 });

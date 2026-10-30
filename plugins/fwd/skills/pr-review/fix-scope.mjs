@@ -17,9 +17,18 @@ export const MAX_COMPARE_FILES = 300;
 // The paths a `compare/<reviewed>...<head>` response changed, or null when it cannot say. Only an
 // `ahead` comparison is the fix: after a rebase or force push the reviewed commit is no longer an
 // ancestor of the head, and the three-dot compare runs from a merge base, so it would also report
-// every commit the rebase picked up from main. A rename counts on both its paths.
+// every commit the rebase picked up from main. A merge of main into the branch keeps it `ahead`
+// while bringing main's files in, so a merge commit, or a commit list the API cut short, says
+// nothing either. A rename counts on both its paths.
 export function fixPaths(compare) {
   if (!compare || compare.status !== 'ahead') return null;
+  const commits = Array.isArray(compare.commits) ? compare.commits : null;
+  if (
+    !commits ||
+    commits.length < (compare.total_commits ?? 0) ||
+    commits.some((c) => (c.parents?.length ?? 1) > 1)
+  )
+    return null;
   const files = Array.isArray(compare.files) ? compare.files : null;
   if (!files || files.length >= MAX_COMPARE_FILES) return null;
   return [

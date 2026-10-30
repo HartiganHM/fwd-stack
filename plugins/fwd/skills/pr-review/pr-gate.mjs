@@ -982,6 +982,10 @@ const lastFixWeight =
 const softFixed = Boolean(
   last && last.count > 0 && lastFixWeight === 'soft' && stale && !destructive,
 );
+const softFixedWhy =
+  lastFixPaths && !lastFixPaths.some(fixIsProduct)
+    ? 'the fix since it changed no production code'
+    : 'its findings were soft';
 // §7's hard stop releases the merge bar, except on a destructive path: there requesting stops,
 // but the merge waits for the user rather than shipping a delete on an unconfirmed round.
 const hardStopReleases = hardStop && !destructive;
@@ -999,7 +1003,7 @@ say(
             ? 'not risky: Claude review recorded (owner ruling 2026-10-30)'
             : `not risky: ${scored.length} Copilot round(s) already ran, which also meets the bar`
     : softFixed
-      ? `the fix since round ${last.n} changed no production code — §5 says merge without another round`
+      ? `round ${last.n} earns no new round (${softFixedWhy}) — §5 says merge without another round`
       : hardStop && destructive
         ? `${cleanStreak} trailing, need ${needed} — §7's hard stop ends requesting, but this diff is destructive, so the merge waits for the user to confirm it §8`
         : hardStop
@@ -1269,7 +1273,7 @@ if (action === 'rerequest') {
   }
   if (softFixed && !barMet) {
     blocks.push(
-      `the fix since round ${last.n} changed no production code, so §5 says merge WITHOUT a new round.`,
+      `round ${last.n} earns no new round (${softFixedWhy}), so §5 says merge WITHOUT a new round.`,
     );
   }
   if (
