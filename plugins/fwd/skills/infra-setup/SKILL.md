@@ -45,7 +45,15 @@ Use it two ways:
 ## Vercel
 
 - [ ] **Ignored Build Step** (`ignoreCommand` in `vercel.json`), as an ALLOWLIST of paths the build cannot read: `docs/`, `design/`, `.github/`, `.claude/` and root `*.md`. Exclude any of those the app reads at runtime. Whenever it is unsure, BUILD. Diff against `VERCEL_GIT_PREVIOUS_SHA` so skipped commits roll into the next build. The extension may name a reference implementation. _Why:_ a fair share of pushes typically touch nothing the app reads, and Build CPU is often the largest line on the bill. A wrongly skipped build ships stale code, so the rule must lean toward building.
-- [ ] **Previews off** unless the project actually uses them (the ignore step skips any env other than `production`). _Why:_ every branch push otherwise builds.
+- [ ] **Previews off when the project is created.** Right after creating it, turn preview deployments off with the API, then read the project back and check the field is `true`:
+
+  ```bash
+  pnpm dlx vercel api /v9/projects/<name> -X PATCH -F previewDeploymentsDisabled=true --scope <team>
+  pnpm dlx vercel api /v9/projects/<name> --scope <team> | jq .previewDeploymentsDisabled
+  ```
+
+  Turn previews back on only if the project actually uses them. Leave git deployments off too unless the project deploys from git (`git.deploymentEnabled: false`, or `gitProviderOptions.createDeployments: "disabled"`). _Why:_ every branch push otherwise builds, and Build CPU is billed. Previews have had to be switched off by hand after the fact more than once.
+
 - [ ] **One build per commit.** A second project that rebuilds the same commit (a staging twin) doubles Build CPU. Build staging from main only (ignore any other ref), and consider whether it needs every push at all. _Why:_ otherwise it is a steady monthly cost for an identical artifact.
 - [ ] **Crons at 15 minutes or slower, enforced by a cadence guard in CI.** The guard is a test that parses `vercel.json` and fails on a schedule under the floor, with an allowlist that records a reason per path (the extension may name a reference implementation). Use off-the-hour minutes (`17 * * * *`). _Why:_ the cron's own invocation cost is pennies. The cost is the database it keeps awake (see Neon).
 - [ ] **Set a deployment retention policy** on each project. Keep enough recent production deployments for Instant Rollback. _Why:_ a thousand deployments a month pile up, and retention is the setting that bounds them.
