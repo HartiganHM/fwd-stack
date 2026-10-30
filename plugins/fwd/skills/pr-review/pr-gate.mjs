@@ -22,6 +22,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  isAnsweredIn,
   isDeclinedIn,
   mentions,
   parseDocSync,
@@ -455,20 +456,25 @@ const isDeclined = (p, n) =>
     n,
     rounds.filter((r) => !r.errored),
   );
-const isDocSynced = (p, n) =>
-  isDeclinedIn(
-    docSynced,
+// Doc-sync's bare entries are matched against fresh rounds only: a stale review counts for
+// nothing (§3), so the round that first flagged a file must not be one. Settled keeps its own
+// rule. Settled and Doc-sync lines are counted together against the round's findings.
+const isAnswered = (p, n) =>
+  isAnsweredIn(
+    [
+      { entries: settled, rounds: rounds.filter((r) => !r.errored) },
+      {
+        entries: docSynced,
+        rounds: rounds.filter((r) => !r.errored && !r.staleAtSubmit),
+      },
+    ],
     p,
     n,
-    rounds.filter((r) => !r.errored),
   );
 const roundWeight = (round) => {
   const counts = round.paths.some(
     (p) =>
-      classify(p) === 'product' &&
-      !isDeclined(p, round.n) &&
-      !isHandoff(p) &&
-      !isDocSynced(p, round.n),
+      classify(p) === 'product' && !isAnswered(p, round.n) && !isHandoff(p),
   );
   if (!counts) return 'soft';
   // A reviewer that did not say `Changes recommended`, and raised nothing inline,

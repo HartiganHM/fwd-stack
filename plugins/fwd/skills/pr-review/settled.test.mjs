@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  isAnsweredIn,
   isDeclinedIn,
   mentions,
   parseDocSync,
@@ -259,4 +260,48 @@ test('doc-sync and settled read their own sections only', () => {
   const body = docSyncBody('- `src/a.tsx` (round 1): stale comment.');
   assert.equal(mentions(parseDocSync(body), 'other.ts'), false);
   assert.equal(mentions(parseSettled(body), 'src/a.tsx'), false);
+});
+
+test('a Settled line and a Doc-sync line on one file answer two findings that round together', () => {
+  const body =
+    'x\n\n## Settled\n\n- `src/a.tsx` (round 1): declined.\n\n## Doc-sync\n\n- `src/a.tsx` (round 1): stale comment fixed.\n';
+  const rounds = [{ n: 1, paths: ['src/a.tsx'], findings: { 'src/a.tsx': 2 } }];
+  const sections = [
+    { entries: parseSettled(body), rounds },
+    { entries: parseDocSync(body), rounds },
+  ];
+  assert.equal(isAnsweredIn(sections, 'src/a.tsx', 1), true);
+  // Either section alone answers one of the two.
+  assert.equal(isAnsweredIn(sections.slice(0, 1), 'src/a.tsx', 1), false);
+  assert.equal(isAnsweredIn(sections.slice(1), 'src/a.tsx', 1), false);
+  // Three findings outnumber the two lines.
+  const three = [{ n: 1, paths: ['src/a.tsx'], findings: { 'src/a.tsx': 3 } }];
+  assert.equal(
+    isAnsweredIn(
+      sections.map((s) => ({ ...s, rounds: three })),
+      'src/a.tsx',
+      1,
+    ),
+    false,
+  );
+});
+
+test('a bare Doc-sync entry is matched against fresh rounds, not a stale one that flagged the file first', () => {
+  const docSync = parseDocSync(
+    docSyncBody('- `src/a.tsx`: stale comment fixed.'),
+  );
+  const all = [
+    { n: 1, paths: ['src/a.tsx'], staleAtSubmit: true },
+    { n: 2, paths: ['src/a.tsx'] },
+    { n: 3, paths: ['src/a.tsx'] },
+  ];
+  const fresh = all.filter((r) => !r.staleAtSubmit);
+  assert.equal(
+    isAnsweredIn([{ entries: docSync, rounds: fresh }], 'src/a.tsx', 2),
+    true,
+  );
+  assert.equal(
+    isAnsweredIn([{ entries: docSync, rounds: fresh }], 'src/a.tsx', 3),
+    false,
+  );
 });
