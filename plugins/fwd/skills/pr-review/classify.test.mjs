@@ -474,3 +474,19 @@ test('a slash after ) that could be a regex hiding a backtick or quote makes the
     'code',
   ]);
 });
+
+test('a carriage return, U+2028 or U+2029 in the patch or the head file is runtime', () => {
+  for (const sep of ['\r', ' ', ' ']) {
+    const patch = [
+      '@@ -1,1 +1,2 @@',
+      ' const a = 1;',
+      `+// note${sep}run();`,
+    ].join('\n');
+    assert.equal(commentOnlyHunks(patch), null, JSON.stringify(sep));
+  }
+  const patch = ['@@ -1,1 +1,2 @@', ' const a = 1;', '+// note'].join('\n');
+  assert.equal(
+    isCommentOnlyChange(mjs(patch), 'const a = 1;\n// note\rrun();\n'),
+    false,
+  );
+});

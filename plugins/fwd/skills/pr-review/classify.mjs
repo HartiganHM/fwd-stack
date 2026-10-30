@@ -118,6 +118,11 @@ function commentFlags(lines, startInBlock) {
   });
 }
 
+// JavaScript ends a line at a carriage return, U+2028 and U+2029 as well as a newline, so a
+// `// note\u2028run();` line is a comment and a call. Every reader here splits on newlines only, so a
+// patch or file holding any of the others is runtime.
+const OTHER_TERMINATORS = /[\r\u2028\u2029]/;
+
 // One hunk, both sides, from the block state each side starts in. Null unless every changed line
 // is a comment, and every unchanged line reads the same on both sides.
 //
@@ -167,6 +172,7 @@ function checkHunk(lines, startFor) {
 // Returns the hunks, or null. A pre-filter: isCommentOnlyChange reads the real starting state from
 // the head file and checks again.
 export function commentOnlyHunks(patch) {
+  if (typeof patch !== 'string' || OTHER_TERMINATORS.test(patch)) return null;
   const hunks = parsePatch(patch);
   if (!hunks) return null;
   let changed = 0;
@@ -367,6 +373,7 @@ export function isCommentOnlyChange({ filename, status, patch }, headText) {
     return false;
   const hunks = commentOnlyHunks(patch);
   if (!hunks || typeof headText !== 'string') return false;
+  if (OTHER_TERMINATORS.test(headText)) return false;
   const states = lineStates(headText);
   if (!states) return false;
   const quiet = (s) => s === 'code' || s === 'block';

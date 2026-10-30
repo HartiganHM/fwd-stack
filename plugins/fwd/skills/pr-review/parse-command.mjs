@@ -470,6 +470,12 @@ export function listElements(cmd) {
       i++;
       continue;
     }
+    // An unquoted `#` starting a word is a comment to the end of the line, as simpleCommands
+    // reads it: a `;` or a quote inside it separates nothing.
+    if (ch === '#' && (i === 0 || /[\s;&|()]/.test(cmd[i - 1]))) {
+      while (i + 1 < cmd.length && cmd[i + 1] !== '\n') i++;
+      continue;
+    }
     if (ch === "'" || ch === '"') quote = ch;
     else if (ch === '`') tick = !tick;
     else if (ch === '(') depth++;

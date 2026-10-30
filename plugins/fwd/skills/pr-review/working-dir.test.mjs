@@ -87,6 +87,15 @@ test('a backgrounded list, or a moving wrapper sharing its element, is unknown',
   assert.deepEqual(at('cd /x && gh pr merge 42 2>&1 | tail -3'), { dir: '/x' });
 });
 
+test('a separator inside a shell comment separates nothing', () => {
+  assert.deepEqual(at('cd /repo-a # note; cd /repo-b\ngh pr merge 42'), {
+    dir: '/repo-a',
+  });
+  assert.deepEqual(listElements("a # it's; b\nc"), ["a # it's; b", 'c']);
+  // A # inside a word is not a comment.
+  assert.deepEqual(listElements('a#b; c'), ['a#b', 'c']);
+});
+
 test('a cd spelled with a backslash or quotes is still a cd', () => {
   assert.deepEqual(at('\\cd /repo-b && gh pr merge 42'), { dir: '/repo-b' });
   assert.deepEqual(at("'cd' /repo-b && gh pr merge 42"), { dir: '/repo-b' });
