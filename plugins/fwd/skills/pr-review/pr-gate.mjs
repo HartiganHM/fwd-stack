@@ -457,9 +457,10 @@ const destructive = destructivePaths.length > 0;
 // security code. Every other code PR takes a Claude review instead, recorded in the PR body under
 // `## Claude review`, and merges on green CI.
 const RISKY_PATH =
-  /(^|\/)(drizzle|migrations?|prisma|db|schema)(\/|\.)|(^|\/)(auth|session|security|billing|payments?|credits?|stripe|webhooks?)(\/|[-_.])|(^|\/)(proxy|middleware)\.[jt]s$|(^|\/)app\/api\//i;
+  /(^|\/)(drizzle|migrations?|prisma|db|schemas?)(\/|\.)|(^|\/)(auth|oauth|session|security|crypto|tokens?|secrets?|passwords?|csrf|jwt|encrypt\w*|billing|payments?|credits?|stripe|webhooks?)(\/|[-_.])|(^|\/)(proxy|middleware)\.[jt]s$|(^|\/)(app|pages)\/api\/|(^|\/)routes?\//i;
 const riskyPaths = files
-  .map((f) => f.filename)
+  // A rename OUT of a risky path still touches it.
+  .flatMap((f) => [f.filename, f.previous_filename].filter(Boolean))
   .filter(
     (p) =>
       !isDoc(p) &&
@@ -470,14 +471,19 @@ const riskyPaths = files
 const risky = destructive || riskyPaths.length > 0;
 const claudeReviewed = /^##\s+Claude review\b/im.test(prData.body ?? '');
 // Test, probe, script or copy-only PRs take no review at all, like doc-only ones (owner ruling 2026-10-30).
+// Narrower than isTooling: no package.json, lockfile or CI config (a dependency bump is code), and a
+// probe counts only as a directory, never a runtime path that happens to say "probe".
+const isTestOrScript = (p) =>
+  p.startsWith('scripts/') ||
+  /(^|\/)(tests?|__tests__|e2e|probes?)\//.test(p) ||
+  /\.(test|spec)\.[cm]?[jt]sx?$/.test(p);
 const noReview =
   !risky &&
-  (productIsTooling ||
-    (files.some((f) => isCopyPath(f.filename)) &&
-      files.every(
-        (f) =>
-          isCopyPath(f.filename) || isTooling(f.filename) || isDoc(f.filename),
-      )));
+  files.every(
+    (f) =>
+      isTestOrScript(f.filename) || isCopyPath(f.filename) || isDoc(f.filename),
+  ) &&
+  files.some((f) => isTestOrScript(f.filename) || isCopyPath(f.filename));
 
 // Errored rounds are skipped when finding the round that first flagged a file,
 // the same as everywhere else they are scored.
@@ -864,7 +870,9 @@ const needed = destructive
 // green CI. A doc-only PR takes none (§9). `needed` and the clean streak are still printed for
 // context, but they no longer decide the bar.
 const barMet =
-  (docOnly && !destructive) || noReview || budgetStop
+  (docOnly && !destructive) ||
+  noReview ||
+  (budgetStop && (!risky || claudeReviewed))
     ? true
     : risky
       ? scored.length >= 1
@@ -1138,7 +1146,7 @@ if (action === 'merge') {
       'hard stop on a destructive path: requesting has ended, but this diff deletes or overwrites ' +
         'user data, so the merge waits for the user to confirm it (§8).',
     );
-  } else if (!barMet && !softFixed && !hardStop) {
+  } else if (!barMet) {
     blocks.push(
       (risky
         ? `bar not met: risky code PR (${riskyPaths.slice(0, 3).join(', ') || 'destructive diff'}) takes exactly one ` +
