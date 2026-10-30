@@ -10,6 +10,9 @@
 // stopping at the first let `gh pr merge feat/x; gh pr merge 42` through on the unreadable one.
 //
 //   node parse-command.mjs '<command>'   prints `<action> <pr> [<owner/name>]` per gated command
+import { homedir } from 'node:os';
+import { isAbsolute, resolve } from 'node:path';
+
 import { isMain } from '../../lib/is-main.mjs';
 
 const REPO = '[A-Za-z0-9._-]+/[A-Za-z0-9._-]+';
@@ -426,10 +429,264 @@ export function unreadableLine(cmd) {
   );
 }
 
+// The directory a command line's gated commands run in. The hook runs in the SESSION's working
+// directory, and an agent often works from a parent folder that is not a checkout at all, with
+// `cd <checkout> && <gated command>`. A gated command that names no repository of its own is then
+// resolved where it really runs: the hook starts the gate in this directory, not the session's.
+//
+// Returns `{ dir: null }` when the line changes directory nowhere (the session's directory stands,
+// as it always did), `{ dir }` when every gated command runs in one directory reached by plain
+// `cd <path>` steps, and `{ unknown: true }` when that directory cannot be read. Unknown covers
+// every change of directory this reader does not follow: `cd` with no path, `cd -`, an option or a
+// redirection, `pushd`/`popd`, `source`/`.` (a sourced file can `cd`), a `cd` behind a prefix or a
+// keyword (`command cd`, `then cd`), an `eval` that changes directory, any `||` on a line that
+// changes directory (either branch may run), a `cd` sharing a subshell, pipeline or background job
+// with a gated command, and gated commands in two directories. The hook then needs the repository
+// named in the command itself, and denies the command otherwise. Reading less than a shell reads is
+// the fail-closed direction: an unknown directory never lets through a command that the session's
+// directory would have denied.
+//
+// A quick filter first: a line naming none of these words cannot change directory.
+const CHANGES_DIR =
+  /(^|[\s;&|(`'"{])(cd|pushd|popd|source|\.)(?=$|[\s;&|)`'"}])/;
+
+// The elements of a command list: the text between `&&`, `||`, `;` and newlines outside quotes,
+// parentheses and backticks. A `cd` in one element applies to the elements after it, because each
+// of those runs in the same shell; a pipeline, subshell or background job stays inside its element.
+export const listElements = (cmd) => listWithOperators(cmd).map((e) => e.text);
+
+// The same elements, each with the operator that joined it to the one before: `''` for the first,
+// `&&`, `||`, or `;` (a newline too).
+export function listWithOperators(cmd) {
+  const out = [];
+  let start = 0;
+  let op = '';
+  let quote = null;
+  let depth = 0;
+  let tick = false;
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    if (quote) {
+      if (ch === '\\' && quote === '"') i++;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '\\') {
+      i++;
+      continue;
+    }
+    // An unquoted `#` starting a word is a comment to the end of the line, as simpleCommands
+    // reads it: a `;` or a quote inside it separates nothing.
+    if (ch === '#' && (i === 0 || /[\s;&|()]/.test(cmd[i - 1]))) {
+      while (i + 1 < cmd.length && cmd[i + 1] !== '\n') i++;
+      continue;
+    }
+    if (ch === "'" || ch === '"') quote = ch;
+    else if (ch === '`') tick = !tick;
+    else if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    else if (depth === 0 && !tick) {
+      const two = cmd.slice(i, i + 2);
+      if (two === '&&' || two === '||' || ch === ';' || ch === '\n') {
+        // A line break straight after `&&` or `||` continues the list; it is not a `;`.
+        if (
+          ch === '\n' &&
+          (op === '&&' || op === '||') &&
+          cmd.slice(start, i).trim() === ''
+        ) {
+          start = i + 1;
+          continue;
+        }
+        out.push({ text: cmd.slice(start, i), op });
+        op = two === '&&' || two === '||' ? two : ';';
+        if (two === '&&' || two === '||') i++;
+        start = i + 1;
+      }
+    }
+  }
+  out.push({ text: cmd.slice(start), op });
+  return out
+    .map((e) => ({ ...e, text: e.text.trim() }))
+    .filter((e) => e.text !== '');
+}
+
+// The text outside quotes, for finding operators.
+const unquoted = (cmd) => cmd.replace(/'[^']*'|"(?:[^"\\]|\\.)*"/g, '""');
+
+// Words a shell reads before the command itself: keywords and prefixes that run the next word in
+// this same shell (`command cd /x` changes this shell's directory).
+const LEADERS = new Set([
+  ...PREFIXES,
+  'builtin',
+  'if',
+  'then',
+  'else',
+  'elif',
+  'do',
+  'while',
+  'until',
+  '!',
+  '{',
+]);
+const DIR_COMMANDS = new Set(['cd', 'pushd', 'popd', 'source', '.']);
+// Whether one simple command may change the shell's directory: a directory command where the
+// command goes, past assignments, keywords and prefixes, or `cd`, `pushd`, `popd` or `source` as a
+// word anywhere in it (an option to a prefix, `env -i cd /x`, would otherwise hide it). `.` counts
+// only where the command goes, so `git add .` stays inert.
+function mayChangeDir(words) {
+  let i = 0;
+  while (
+    i < words.length &&
+    (/^[A-Za-z_][A-Za-z0-9_]*=/.test(words[i]) || LEADERS.has(words[i]))
+  )
+    i++;
+  if (DIR_COMMANDS.has(words[i])) return true;
+  return words.some((w) => DIR_COMMANDS.has(w) && w !== '.');
+}
+
+// `eval` runs its text in this shell, so a `cd` in it moves every command after it.
+const isEval = (words) =>
+  words.find((w) => !/^[A-Za-z_][A-Za-z0-9_]*=/.test(w) && !PREFIXES.has(w)) ===
+  'eval';
+
+// Whether a command line may change directory anywhere: the raw text, or any word once the shell
+// has removed quotes and backslashes (`\cd`, `'cd'`), or a wrapper's body inside one word.
+// A wrapper's body is read the same way, as the command line it is.
+const changesDir = (text, depth = 0) =>
+  CHANGES_DIR.test(text) ||
+  simpleCommands(text).some((words) => {
+    if (mayChangeDir(words) || words.some((w) => CHANGES_DIR.test(w)))
+      return true;
+    const body = depth < 3 ? innerCommandLine(words) : null;
+    return body !== null && changesDir(body, depth + 1);
+  });
+
+export function workingDir(cmd, cwd, home = homedir()) {
+  if (!changesDir(cmd)) return { dir: null };
+  const where = walkDirs(cmd, cwd, home, 0);
+  if (where.unknown) return where;
+  return { dir: where.dir === cwd ? null : where.dir };
+}
+
+// Shell grammar this walker does not model: conditionals, loops, groups, functions, and the
+// builtins that run text or a command in this same shell. On a line that changes directory, any of
+// them as a word makes the directory unknown, rather than one more shape to chase
+// (`builtin eval 'cd /b'`, `if …; then cd /b; fi`).
+const UNMODELLED = new Set([
+  'eval',
+  'builtin',
+  'command',
+  'exec',
+  'source',
+  'if',
+  'then',
+  'elif',
+  'else',
+  'fi',
+  'while',
+  'until',
+  'do',
+  'done',
+  'for',
+  'case',
+  'esac',
+  'select',
+  'function',
+  'coproc',
+  '{',
+  '}',
+  '!',
+]);
+
+function walkDirs(cmd, cwd, home, depth) {
+  const unknown = { unknown: true };
+  if (depth > 3) return unknown;
+  if (
+    simpleCommands(cmd).some(
+      (words) => words.some((w) => UNMODELLED.has(w)) || words[0] === '.',
+    )
+  )
+    return unknown;
+  // `cd /a || cd /b; <gated>` runs in either directory, depending on the first `cd`.
+  const branches = /\|\|/.test(unquoted(cmd));
+  // A single `&` backgrounds the whole and-or list before it (`cd /b && make & <gated>`), so a
+  // `cd` in it never reaches what follows. Redirections (`2>&1`, `&>`) are not backgrounding.
+  if (/(^|[^&>])&(?![&>])/.test(unquoted(cmd))) return unknown;
+  let dir = cwd;
+  let gatedDir = null;
+  const ranIn = (d) => {
+    if (gatedDir !== null && gatedDir !== d) return false;
+    gatedDir = d;
+    return true;
+  };
+  // `make && cd /b; <gated>`: the cd runs only if `make` succeeded, and the gated command runs
+  // either way, so after the `&&` chain holding such a cd ends, the directory is unknown. Inside
+  // the chain it is not: `make && cd /b && <gated>` runs only where the cd took it.
+  let conditionalCd = false;
+  let unsure = false;
+  for (const { text: element, op } of listWithOperators(cmd)) {
+    if (op !== '&&' && conditionalCd) {
+      unsure = true;
+      conditionalCd = false;
+    }
+    const commands = simpleCommands(element);
+    const gated = parseCommand(element).length > 0;
+    const words = commands.length === 1 ? commands[0] : null;
+    // `cd <path>` alone: no option, no redirection, no other command in its element.
+    const plain =
+      words?.[0] === 'cd' && words.length === 2 && !/[|&()`<>]/.test(element);
+    if (plain) {
+      const to = words[1];
+      if (branches || to === '' || to.startsWith('-') || /[\n$]/.test(to))
+        return unknown;
+      const path =
+        to === '~' ? home : to.startsWith('~/') ? home + to.slice(1) : to;
+      // A relative `cd` with no session directory to start from cannot be resolved.
+      if (!isAbsolute(path) && !dir) return unknown;
+      dir = resolve(dir ?? '/', path);
+      if (op === '&&') conditionalCd = true;
+      // A cd that always runs, to an absolute path, settles the directory again.
+      else if (isAbsolute(path)) unsure = false;
+      continue;
+    }
+    // A shell wrapper (`bash -c 'cd x && …'`): its `cd` ends with it, and its gated commands run
+    // where it changed to. `eval` is not a wrapper for this: it runs in this shell.
+    // A wrapper that changes directory, sharing its element with anything (`bash -c 'cd x && …' |
+    // cat`), is not followed.
+    const movingWrappers = commands.filter((c) => {
+      const body = innerCommandLine(c);
+      return body !== null && changesDir(body);
+    });
+    if (movingWrappers.length > 0 && commands.length !== 1) return unknown;
+    const inner = words ? innerCommandLine(words) : null;
+    if (inner !== null && changesDir(inner)) {
+      if (isEval(words)) return unknown;
+      const sub = walkDirs(inner, dir, home, depth + 1);
+      if (sub.unknown) return unknown;
+      if (sub.dir !== null && (unsure || !ranIn(sub.dir))) return unknown;
+      continue;
+    }
+    if (commands.some(mayChangeDir)) {
+      // A subshell's own `cd`, with nothing gated beside it, ends with the subshell.
+      if (!gated && element.startsWith('(')) continue;
+      return unknown;
+    }
+    if (gated && (unsure || !ranIn(dir))) return unknown;
+  }
+  return { dir: gatedDir };
+}
+
 if (isMain(import.meta.url)) {
   const cmd = process.argv[2] ?? '';
   const parsed = parseCommand(cmd);
   if (unreadableLine(cmd)) console.log('unreadable');
+  // Only a line with something gated needs its directory. `cd <dir>` or `cd?` comes first; the
+  // hook reads it apart from the `<action> <pr> [<owner/name>]` lines.
+  if (parsed.length > 0) {
+    const where = workingDir(cmd, process.argv[3] || null);
+    if (where.unknown) console.log('cd?');
+    else if (where.dir) console.log(`cd ${where.dir}`);
+  }
   for (const g of parsed)
     if (g.pr) console.log([g.action, g.pr, g.repo].filter(Boolean).join(' '));
 }
