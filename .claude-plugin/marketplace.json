@@ -2,7 +2,10 @@
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "fwd-stack",
   "description": "Featherweight's shared Claude Code skills and hooks.",
-  "owner": { "name": "featherweight-design", "url": "https://github.com/featherweight-design" },
+  "owner": {
+    "name": "featherweight-design",
+    "url": "https://github.com/featherweight-design"
+  },
   "plugins": [
     {
       "name": "fwd",
