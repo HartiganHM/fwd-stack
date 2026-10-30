@@ -30,8 +30,10 @@ the single open decision (§6).
 - **Keep a stable step list per line** in the project's board or priorities file, so M does not
   drift. When a step is split or added, say so in one line under the chart: "grew to 11: the
   importer is two PRs".
-- **Count from the system of record**, not lane claims: `gh pr list --state merged` and
-  `gh pr list --state open` for PR steps, the user's own word for theirs.
+- **Count from the system of record**, not lane claims. Record each PR step's PR number in the
+  step list once it opens, and check each one with `gh pr view <n> --json state`: `gh pr list` is
+  capped (30 by default), so an old merged step can drop off it. Search open PRs for a step with
+  no number yet. The user's steps count on the user's own word.
 
 ## 3 · The chart
 

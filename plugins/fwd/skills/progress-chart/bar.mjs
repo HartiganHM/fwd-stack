@@ -21,10 +21,11 @@ export function cells(done, inFlight, total) {
   if (done + inFlight > total)
     throw new Error(`${done} + ${inFlight} is more than ${total}`);
 
-  const exact = [done, inFlight, total - done - inFlight].map(
-    (c) => (c * WIDTH) / total,
-  );
-  const out = exact.map(Math.round);
+  const counts = [done, inFlight, total - done - inFlight];
+  const out = counts.map((c) => Math.round((c * WIDTH) / total));
+  // Rounding error in units of 1/total of a cell: whole numbers, so equal errors tie exactly
+  // (floating-point subtraction once broke a three-way tie in favour of done).
+  const err = (i) => counts[i] * WIDTH - out[i] * total;
   // Each segment is off by at most half a cell, so the total is off by at most one.
   const order = [2, 1, 0];
   let sum = out[0] + out[1] + out[2];
@@ -32,7 +33,7 @@ export function cells(done, inFlight, total) {
     const dir = sum > WIDTH ? -1 : 1;
     // Move the segment the rounding pushed furthest the wrong way.
     const pick = order.reduce((best, i) =>
-      dir * (exact[i] - out[i]) > dir * (exact[best] - out[best]) ? i : best,
+      dir * err(i) > dir * err(best) ? i : best,
     );
     out[pick] += dir;
     sum += dir;

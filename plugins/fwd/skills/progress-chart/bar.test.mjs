@@ -35,6 +35,30 @@ test('an overflow comes off not started first, so a tie never overstates progres
   assert.deepEqual(cells(1, 1, 8), [3, 2, 15]);
 });
 
+test('a shortfall goes to not started first, on an exact tie as well', () => {
+  // 13.33 + 3.33 + 3.33 rounds to 13 + 3 + 3 = 19; all three are a third of a cell short.
+  assert.deepEqual(cells(4, 1, 6), [13, 3, 4]);
+});
+
+test('done never takes or gives the fixing cell while another segment ties with it', () => {
+  for (let total = 1; total <= 40; total++) {
+    for (let done = 0; done <= total; done++) {
+      for (let inFlight = 0; done + inFlight <= total; inFlight++) {
+        const counts = [done, inFlight, total - done - inFlight];
+        const rounded = counts.map((c) => Math.round((c * WIDTH) / total));
+        const err = counts.map((c, i) => c * WIDTH - rounded[i] * total);
+        if (err.slice(1).some((e) => e === err[0])) {
+          assert.equal(
+            cells(done, inFlight, total)[0],
+            rounded[0],
+            `${done}/${inFlight}/${total}`,
+          );
+        }
+      }
+    }
+  }
+});
+
 test('empty and full lines', () => {
   assert.equal(bar(0, 0, 7), '░'.repeat(20));
   assert.equal(bar(7, 0, 7), '█'.repeat(20));
