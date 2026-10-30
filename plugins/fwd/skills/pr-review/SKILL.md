@@ -37,6 +37,12 @@ budget and a hard stop. So:
   under `## Escaped from #N`. At the month's end, count Copilot AI credits, reviews by PR kind, and
   escaped bugs by the review kind of the PR they escaped from (risky with Copilot, Claude review, no
   review).
+- **Copilot vs Claude, head to head (risky PRs only).** Every risky PR gets both reviewers on the
+  same diff, so it is the comparison. Run `/code-review medium` BEFORE reading Copilot's round. Then
+  add one line to `## Claude review`: `A/B: Copilot <n> (C/H/M/L), Claude <n> (C/H/M/L), both <n>, Copilot-only real <n>, Claude-only real <n>`.
+  A finding is "real" if you fixed it. The month-end report adds these lines up. The question it
+  answers: can Claude replace Copilot entirely, which drops the $19 seat and the AI credits and leaves
+  one fewer tool.
 - Only on featherweight-design repos. A repo owned by a personal account bills the member's own
   license, so Copilot stays off there entirely.
 - The rest of this document still governs how to read and triage a round: staleness, findings,
