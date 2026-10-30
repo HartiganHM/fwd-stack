@@ -50,6 +50,7 @@ import {
   sameRepo,
 } from './git-remote.mjs';
 import { parsePages } from './pages.mjs';
+import { fixPaths, fixWeight } from './fix-scope.mjs';
 
 const args = process.argv.slice(2);
 const pr = args.find((a) => /^\d+$/.test(a));
@@ -947,16 +948,44 @@ const oscillating = [...new Set(scored.flatMap((r) => r.paths))]
   // discounts no finding.
   .filter((p) => consecutive(p) >= 4 && !mentions(settled, p) && !added.has(p));
 
-// §5's other door: a round whose findings were all soft earns no new round, so
-// fixing them and pushing IS the way out. Without this the two rules deadlock —
+// §5 asks whether the FIX changed production code, not where Copilot anchored the finding
+// (fix-scope.mjs). Once the author has pushed past the last round, it is weighed by the files
+// changed between the commit it reviewed and the head; when that cannot be read, by its anchors.
+let lastFixPaths = null;
+if (last && stale && last.count > 0) {
+  try {
+    lastFixPaths = fixPaths(
+      JSON.parse(run(['api', `repos/${repo}/compare/${last.sha}...${head}`])),
+    );
+  } catch {
+    // No comparison (a fork's head, a sha gone after a force push): the anchors decide.
+  }
+}
+// A test helper or fixture directory is not product code, though classify reads it so.
+const fixIsProduct = (p) =>
+  classify(p) === 'product' && (productIsTooling || !isTestOrScript(p));
+const lastFixWeight =
+  last && stale && last.count > 0
+    ? fixWeight({
+        anchorWeight: roundWeight(last),
+        open: last.paths.filter((p) => !isAnswered(p, last.n) && !isHandoff(p))
+          .length,
+        describing: !last.pressing && last.inlineCount === 0,
+        paths: lastFixPaths,
+        isProduct: fixIsProduct,
+      })
+    : null;
+
+// §5's other door: a round whose fix touched no production code earns no new round, so
+// fixing it and pushing IS the way out. Without this the two rules deadlock —
 // no re-request allowed, and no clean round can ever arrive.
 const softFixed = Boolean(
-  last &&
-  last.count > 0 &&
-  roundWeight(last) === 'soft' &&
-  stale &&
-  !destructive,
+  last && last.count > 0 && lastFixWeight === 'soft' && stale && !destructive,
 );
+const softFixedWhy =
+  lastFixPaths && !lastFixPaths.some(fixIsProduct)
+    ? 'the fix since it changed no production code'
+    : 'its findings were soft';
 // §7's hard stop releases the merge bar, except on a destructive path: there requesting stops,
 // but the merge waits for the user rather than shipping a delete on an unconfirmed round.
 const hardStopReleases = hardStop && !destructive;
@@ -974,13 +1003,26 @@ say(
             ? 'not risky: Claude review recorded (owner ruling 2026-10-30)'
             : `not risky: ${scored.length} Copilot round(s) already ran, which also meets the bar`
     : softFixed
-      ? `round ${last.n} was soft-only and you have pushed past it — §5 says merge without another round`
+      ? `round ${last.n} earns no new round (${softFixedWhy}) — §5 says merge without another round`
       : hardStop && destructive
         ? `${cleanStreak} trailing, need ${needed} — §7's hard stop ends requesting, but this diff is destructive, so the merge waits for the user to confirm it §8`
         : hardStop
           ? `${cleanStreak} trailing, need ${needed} — but §7's hard stop releases it: merge and report what is left`
           : `${cleanStreak} successful round(s) trailing, need ${needed} §8`,
 );
+
+if (lastFixWeight && lastFixPaths && lastFixWeight !== roundWeight(last)) {
+  say(
+    true,
+    'fix scope        ',
+    lastFixWeight === 'soft'
+      ? `round ${last.n} was anchored on the product tree, but the fix since it touched only ${lastFixPaths.slice(0, 3).join(', ')} — no production change, so no new round §5`
+      : `round ${last.n} was anchored off the product tree, but the fix since it changed production code (${lastFixPaths
+          .filter(fixIsProduct)
+          .slice(0, 3)
+          .join(', ')}) §5`,
+  );
+}
 
 if (repeated.length) {
   warn(
@@ -1227,6 +1269,11 @@ if (action === 'rerequest') {
       `${oscillating.join(', ')} drew findings in ${consecutive(oscillating[0])} consecutive rounds. ` +
         "§7: make the scope decision and record it in the PR body's `## Settled` (naming the file); " +
         'another round will not settle it.',
+    );
+  }
+  if (softFixed && !barMet) {
+    blocks.push(
+      `round ${last.n} earns no new round (${softFixedWhy}), so §5 says merge WITHOUT a new round.`,
     );
   }
   if (

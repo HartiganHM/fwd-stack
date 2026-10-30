@@ -412,6 +412,11 @@ The full suite also runs on lockfile, config, CI or dependency changes, or when 
   | Naming, wording, formatting, plurals                        | No          |
   | Anything in a test, probe, fixture, or `scripts/`           | No          |
 
+  **The row is decided by the files the fix changed, not where the finding was anchored.** Once
+  you push past a round, the gate weighs it by the files changed between the commit it reviewed
+  and the head: a production-anchored finding fixed only in a test or doc earns no round, and a
+  test-anchored one fixed in production code does. No `## Settled` entry is needed for either.
+
   **The `scripts/` row is about a feature's supporting probe, not about a PR
   whose product is the script.** On a tooling PR the script _is_ the production
   code, and a defect in it earns a round like any other. Read the row as "code
