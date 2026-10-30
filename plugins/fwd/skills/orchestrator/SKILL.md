@@ -161,7 +161,9 @@ When a lane proposes spend (model calls, API quota, paid runs):
   Send long text the user must read in a turn of its own and ask in the next, and never put it in
   a question's option preview.
 - Talk in product terms, not code: name the feature and the screen, not the file.
-- **Status** is a table:
+- **Status opens with the `progress-chart` skill's chart, alone.** The lane table below is for
+  when the user asks about lanes.
+- **Lane status** is a table:
   - columns: work item (plain words, never a bare ticket number) · lane (session name and model) ·
     state · PR · where it is testable · what the user must do;
   - colour the states: ✅ done, 🟡 in progress, ⏳ queued, 🔴 blocked;
