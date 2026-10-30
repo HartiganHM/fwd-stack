@@ -28,11 +28,14 @@ import {
   parseSettled,
 } from './settled.mjs';
 import {
+  commentOnlyHunks,
+  isCommentOnlyChange,
   isDoc,
-  isDocOnly,
+  isDocOnlyChange,
   isGenerated,
   isHandoff,
   isToolingConfig,
+  isVersionOnlyChange,
 } from './classify.mjs';
 import { markStaleRounds } from './stale-rounds.mjs';
 import { ciProblemsOf } from './ci-state.mjs';
@@ -133,13 +136,30 @@ if (!pr) {
   process.exit(2);
 }
 
-const repo =
-  repoArg ??
-  JSON.parse(
-    execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner'], {
-      encoding: 'utf8',
-    }),
-  ).nameWithOwner;
+// An explicit `--repo` always decides, and the working directory is never consulted for it.
+// Without one, the repository is the working directory's, as `gh` itself resolves it. Outside any
+// checkout there is none, and the gate stops (exit 1, so the hook denies) with the reason in one
+// line rather than a stack trace whose first line, "not a git repository", read as a broken hook.
+let repo = repoArg;
+if (!repo) {
+  try {
+    repo = JSON.parse(
+      execFileSync('gh', ['repo', 'view', '--json', 'nameWithOwner'], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }),
+    ).nameWithOwner;
+  } catch {
+    repo = null;
+  }
+  if (!repo) {
+    console.log(
+      `cannot tell which repository PR #${pr} is in: ${process.cwd()} is not a checkout of one. ` +
+        'Name it with --repo owner/name.',
+    );
+    process.exit(1);
+  }
+}
 
 const [prData] = gh(`repos/${repo}/pulls/${pr}`);
 const reviews = gh(`repos/${repo}/pulls/${pr}/reviews`).filter(
@@ -147,6 +167,39 @@ const reviews = gh(`repos/${repo}/pulls/${pr}/reviews`).filter(
 );
 const inline = gh(`repos/${repo}/pulls/${pr}/comments`);
 const files = gh(`repos/${repo}/pulls/${pr}/files`);
+
+// Files whose change is shown not to touch what runs (classify.mjs): a top-level version bump in
+// plugin.json or package.json, or a script edit whose every changed line is a comment. The comment
+// check needs the head file's text, to see a template literal opened above a hunk; when the API
+// cannot return it, the file stays runtime. These score as prose: a doc PR that rewords a comment
+// or bumps the plugin version still needs one round, not two.
+const nonRuntime = new Set();
+for (const f of files) {
+  if (isVersionOnlyChange(f)) {
+    nonRuntime.add(f.filename);
+    continue;
+  }
+  if (!commentOnlyHunks(f.patch)) continue;
+  try {
+    const text = execFileSync(
+      'gh',
+      [
+        'api',
+        '-H',
+        'Accept: application/vnd.github.raw',
+        `repos/${prData.head.repo?.full_name ?? repo}/contents/${refPath(f.filename)}?ref=${prData.head.sha}`,
+      ],
+      {
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'ignore'],
+      },
+    );
+    if (isCommentOnlyChange(f, text)) nonRuntime.add(f.filename);
+  } catch {
+    // No head text: the change cannot be shown to be comment-only, so it stays runtime.
+  }
+}
 
 // ---- findings ---------------------------------------------------------------
 // A finding is an inline comment or a suppressed one. Suppressed comments live
@@ -303,12 +356,15 @@ const productIsTooling =
 // errors that every reader would have seen. Printed so the distinction is made.
 const productIsProse =
   files.length > 0 &&
-  files.every((f) => isDoc(f.filename) || isCopyPath(f.filename));
+  files.every(
+    (f) =>
+      isDoc(f.filename) || isCopyPath(f.filename) || nonRuntime.has(f.filename),
+  );
 
 const classify = (p) =>
   isHandoff(p)
     ? 'handoff'
-    : isDoc(p)
+    : isDoc(p) || nonRuntime.has(p)
       ? 'doc'
       : isTooling(p)
         ? productIsTooling
@@ -422,7 +478,10 @@ const roundWeight = (round) => {
 let originRepo = null;
 try {
   originRepo = repoFromRemoteUrl(
-    execFileSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' }),
+    execFileSync('git', ['remote', 'get-url', 'origin'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }),
   );
 } catch {
   // Not a git checkout.
@@ -437,6 +496,7 @@ try {
       {
         encoding: 'utf8',
         timeout: 15000,
+        stdio: ['ignore', 'pipe', 'ignore'],
       },
     ).trim();
     refHead = out.split(/\s+/)[0] || null;
@@ -545,11 +605,15 @@ const lastThreeOnNew =
 let localHead = null;
 let localBranch = null;
 try {
+  // stderr dropped: outside a checkout, git's "not a git repository" is the expected answer, and
+  // printed, it led the hook's denial and read as the reason for it.
   localBranch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
     encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
   }).trim();
   localHead = execFileSync('git', ['rev-parse', 'HEAD'], {
     encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
   }).trim();
 } catch {
   // Not a git repo, or a detached HEAD — the check simply does not apply.
@@ -561,6 +625,7 @@ const gitConfig = (key) => {
   try {
     return execFileSync('git', ['config', '--get', key], {
       encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
     }).trim();
   } catch {
     return null;
@@ -595,7 +660,7 @@ const remoteHead = onHeadBranch ? refHead : null;
 const pushTarget = remoteHead ?? prData.head.sha;
 const unpushed = Boolean(onHeadBranch && localHead && localHead !== pushTarget);
 
-const docOnly = isDocOnly(files.map((f) => f.filename));
+const docOnly = isDocOnlyChange(files, nonRuntime);
 const changed = files.length;
 const lines = files.reduce((n, f) => n + f.additions + f.deletions, 0);
 const openedHours = (Date.now() - Date.parse(prData.created_at)) / 3_600_000;
@@ -611,7 +676,10 @@ const proseLines = files
   .filter(
     (f) =>
       !isGenerated(f.filename) &&
-      (isDoc(f.filename) || isHandoff(f.filename) || isCopyPath(f.filename)),
+      (isDoc(f.filename) ||
+        isHandoff(f.filename) ||
+        isCopyPath(f.filename) ||
+        nonRuntime.has(f.filename)),
   )
   .reduce((t, f) => t + f.additions + f.deletions, 0);
 const generatedLines = files

@@ -34,7 +34,9 @@ With `--action` it judges that action and exits non-zero when a rule forbids it.
 re-request, and denies the call when it exits non-zero.** The hook reads the command
 line itself, and **fails closed**: a command that mentions a merge it cannot attribute to a PR
 (a wrapper, a substitution, a heredoc, an unknown flag, a merge of the current branch) is
-denied with the plain form to use, `gh pr merge <number> [--repo owner/name]`. That is deliberate.
+denied with the plain form to use, `gh pr merge <number> [--repo owner/name]`. A repository the
+command names (`--repo`, `-R`, an API path) always decides. One that names none is resolved in the
+directory a plain `cd <path>` takes it to, and outside any checkout it is denied. That is deliberate.
 Every rule here was written after a real cost, and then the person who wrote
 them broke three of them in a single PR — merged one eight rounds after its bar
 was met, patched one surface for three consecutive rounds instead of deciding,
@@ -661,7 +663,8 @@ detects those from the diff and says so instead.
 ## 9 · Doc-only PRs
 
 Briefs, specs, plans, property tables, trackers, READMEs — anything with no
-runtime.
+runtime. The gate also counts a script edit whose every changed line is a comment, and a
+`plugin.json` or `package.json` change to the top-level `version` alone, as having none.
 
 - **One round, fix everything valid it returns, merge.** No verification round.
 - **Unless a round returns a factual error** in a spec, brief or property table —

@@ -10,6 +10,9 @@
 // stopping at the first let `gh pr merge feat/x; gh pr merge 42` through on the unreadable one.
 //
 //   node parse-command.mjs '<command>'   prints `<action> <pr> [<owner/name>]` per gated command
+import { homedir } from 'node:os';
+import { isAbsolute, resolve } from 'node:path';
+
 import { isMain } from '../../lib/is-main.mjs';
 
 const REPO = '[A-Za-z0-9._-]+/[A-Za-z0-9._-]+';
@@ -426,10 +429,129 @@ export function unreadableLine(cmd) {
   );
 }
 
+// The directory a command line's gated commands run in. The hook runs in the SESSION's working
+// directory, and an agent often works from a parent folder that is not a checkout at all, with
+// `cd <checkout> && <gated command>`. A gated command that names no repository of its own is then
+// resolved where it really runs: the hook starts the gate in this directory, not the session's.
+//
+// Returns `{ dir: null }` when the line changes directory nowhere (the session's directory stands,
+// as it always did), `{ dir }` when every gated command runs in one directory reached by plain
+// `cd <path>` steps, and `{ unknown: true }` when that directory cannot be read: `cd` with no path,
+// `cd -`, an option, a redirection, `pushd`/`popd`, a `cd` sharing a subshell, pipeline or
+// background job with a gated command, or gated commands in two directories. The hook then needs
+// the repository named in the command itself, and denies the command otherwise. Reading less than
+// a shell reads is the fail-closed direction: an unknown directory never lets through a command
+// that the session's directory would have denied.
+const CHANGES_DIR = /(^|[\s;&|(`'"])(cd|pushd|popd)(?=$|[\s;&|)`'"])/;
+
+// The elements of a command list: the text between `&&`, `||`, `;` and newlines outside quotes,
+// parentheses and backticks. A `cd` in one element applies to the elements after it, because each
+// of those runs in the same shell; a pipeline, subshell or background job stays inside its element.
+export function listElements(cmd) {
+  const out = [];
+  let start = 0;
+  let quote = null;
+  let depth = 0;
+  let tick = false;
+  for (let i = 0; i < cmd.length; i++) {
+    const ch = cmd[i];
+    if (quote) {
+      if (ch === '\\' && quote === '"') i++;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '\\') {
+      i++;
+      continue;
+    }
+    if (ch === "'" || ch === '"') quote = ch;
+    else if (ch === '`') tick = !tick;
+    else if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    else if (depth === 0 && !tick) {
+      const two = cmd.slice(i, i + 2);
+      if (two === '&&' || two === '||' || ch === ';' || ch === '\n') {
+        out.push(cmd.slice(start, i));
+        if (two === '&&' || two === '||') i++;
+        start = i + 1;
+      }
+    }
+  }
+  out.push(cmd.slice(start));
+  return out.map((e) => e.trim()).filter(Boolean);
+}
+
+export function workingDir(cmd, cwd, home = homedir()) {
+  if (!CHANGES_DIR.test(cmd)) return { dir: null };
+  const where = walkDirs(cmd, cwd, home, 0);
+  if (where.unknown) return where;
+  return { dir: where.dir === cwd ? null : where.dir };
+}
+
+function walkDirs(cmd, cwd, home, depth) {
+  const unknown = { unknown: true };
+  if (depth > 3) return unknown;
+  let dir = cwd;
+  let gatedDir = null;
+  const ranIn = (d) => {
+    if (gatedDir !== null && gatedDir !== d) return false;
+    gatedDir = d;
+    return true;
+  };
+  for (const element of listElements(cmd)) {
+    const commands = simpleCommands(element);
+    const gated = parseCommand(element).length > 0;
+    if (!CHANGES_DIR.test(element)) {
+      if (gated && !ranIn(dir)) return unknown;
+      continue;
+    }
+    const words = commands.length === 1 ? commands[0] : null;
+    // `cd <path>` alone: no option, no redirection, no other command in its element.
+    const plain =
+      words?.[0] === 'cd' && words.length === 2 && !/[|&()`<>]/.test(element);
+    if (plain) {
+      const to = words[1];
+      if (to === '' || to.startsWith('-') || /[\n$]/.test(to)) return unknown;
+      const path =
+        to === '~' ? home : to.startsWith('~/') ? home + to.slice(1) : to;
+      // A relative `cd` with no session directory to start from cannot be resolved.
+      if (!isAbsolute(path) && !dir) return unknown;
+      dir = resolve(dir ?? '/', path);
+      continue;
+    }
+    // A shell wrapper (`bash -c 'cd x && …'`): its `cd` ends with it, and its gated commands run
+    // where it changed to.
+    const inner = words ? innerCommandLine(words) : null;
+    if (inner !== null) {
+      const sub = walkDirs(inner, dir, home, depth + 1);
+      if (sub.unknown) return unknown;
+      if (sub.dir !== null && !ranIn(sub.dir)) return unknown;
+      continue;
+    }
+    // Any other `cd`, `pushd` or `popd` in the element of a gated command, or one that changes this
+    // shell's directory in a form not read above, leaves the directory unknown. A mention in text
+    // (`echo "cd x"`) or a subshell's own `cd` with nothing gated beside it changes nothing.
+    if (gated) return unknown;
+    if (
+      /^(cd|pushd|popd)$/.test(words?.[0] ?? '') ||
+      /^(cd|pushd|popd)\b/.test(element)
+    )
+      return unknown;
+  }
+  return { dir: gatedDir };
+}
+
 if (isMain(import.meta.url)) {
   const cmd = process.argv[2] ?? '';
   const parsed = parseCommand(cmd);
   if (unreadableLine(cmd)) console.log('unreadable');
+  // Only a line with something gated needs its directory. `cd <dir>` or `cd?` comes first; the
+  // hook reads it apart from the `<action> <pr> [<owner/name>]` lines.
+  if (parsed.length > 0) {
+    const where = workingDir(cmd, process.argv[3] || null);
+    if (where.unknown) console.log('cd?');
+    else if (where.dir) console.log(`cd ${where.dir}`);
+  }
   for (const g of parsed)
     if (g.pr) console.log([g.action, g.pr, g.repo].filter(Boolean).join(' '));
 }
