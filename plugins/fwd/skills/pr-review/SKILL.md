@@ -14,17 +14,29 @@ Copilot review is billed per review to the org's AI credits. Measured on the-99:
 review at Balanced and 4,228 reviews in October. The org now runs Lite effort with a $75 monthly
 budget and a hard stop. So:
 
-| PR kind                                                                                                                                    | Review                                                                                                                                                                 | Merge bar                     |
-| ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| **Risky code**: destructive diff, migrations/schema, DB layer, auth/session/proxy, payments/credits/billing/webhooks, API routes, security | **One Copilot round.** Fix every valid finding. No confirmation rounds, no re-requests.                                                                                | 1 scored round + green CI     |
-| **Other code**                                                                                                                             | **Claude review, no Copilot.** Run `/code-review` on the PR diff, fix what it finds, and record it in the PR body under `## Claude review` (what ran, what was fixed). | `## Claude review` + green CI |
-| **Doc, design, test, probe, script or copy-only**                                                                                          | None. Read your own diff.                                                                                                                                              | Green CI                      |
+| PR kind                                                                                                                                    | Review                                                                                                                                                                  | Merge bar                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| **Risky code**: destructive diff, migrations/schema, DB layer, auth/session/proxy, payments/credits/billing/webhooks, API routes, security | **One Copilot round.** Fix every valid finding. No confirmation rounds, no re-requests.                                                                                 | 1 scored round + green CI     |
+| **Other code**                                                                                                                             | **Claude review, no Copilot.** Dispatch the `caveman:cavecrew-reviewer` agent on the PR diff, fix what it finds, and record it in the PR body under `## Claude review`. | `## Claude review` + green CI |
+| **Doc, design, test, probe, script or copy-only**                                                                                          | None. Read your own diff.                                                                                                                                               | Green CI                      |
 
 - The gate classifies the PR (`copilot scope` line) and enforces this table. It refuses a second
   Copilot request on a risky PR, and any request on a non-risky one.
 - **Budget stop.** When reviews stop landing because the monthly budget is spent, write
   `## Copilot budget stop` in the PR body (the date and the failed request), then merge risky PRs on
   green CI after a Claude review. No retry loops. The budget resets on the 1st.
+- **Which Claude reviewer.** Use the `caveman:cavecrew-reviewer` agent for non-risky code PRs. It is a
+  read-only subagent that returns one line per finding, so only the findings come back into the session
+  (about 55k subagent tokens on a 140-line gate change, which found a real bug). On a risky PR, run
+  `/code-review medium` on the diff as well as the Copilot round: the two catch different things.
+  Don't use a GitHub-side Claude Action; it bills API usage per run, which is the same problem as Copilot.
+- **`## Claude review` records:** the reviewer used (`cavecrew-reviewer` or `/code-review <level>`), the
+  number of findings by severity, and what was fixed or declined. One short paragraph.
+- **Measured for a month (2026-10-30 to 2026-11-30), then re-ruled.** Two questions: cost, and escaped
+  bugs. When a fix PR repairs a defect that an earlier merged PR introduced, its body names that PR
+  under `## Escaped from #N`. At the month's end, count Copilot AI credits, reviews by PR kind, and
+  escaped bugs by the review kind of the PR they escaped from (risky with Copilot, Claude review, no
+  review).
 - Only on featherweight-design repos. A repo owned by a personal account bills the member's own
   license, so Copilot stays off there entirely.
 - The rest of this document still governs how to read and triage a round: staleness, findings,
