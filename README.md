@@ -28,7 +28,7 @@ Planned, in order: the `stack` generator with opt-in capabilities, `stack doctor
 The packages are not on npm yet. Until they are, install them from this repo by path:
 
 ```sh
-pnpm add -D "@fwd-stack/eslint-config@github:HartiganHM/fwd-stack#path:/packages/eslint-config"
+pnpm add -D "@fwd-stack/eslint-config@github:featherweight-design/fwd-stack#path:/packages/eslint-config"
 ```
 
 TypeScript:
@@ -52,7 +52,7 @@ CI, in the project's `.github/workflows/ci.yml`:
 ```yaml
 jobs:
   gate:
-    uses: HartiganHM/fwd-stack/.github/workflows/node-ci.yml@main
+    uses: featherweight-design/fwd-stack/.github/workflows/node-ci.yml@main
     with:
       scripts: typecheck lint test build
 ```
@@ -75,7 +75,7 @@ on:
 
 jobs:
   gate:
-    uses: HartiganHM/fwd-stack/.github/workflows/node-ci.yml@main
+    uses: featherweight-design/fwd-stack/.github/workflows/node-ci.yml@main
     with:
       scripts: typecheck lint test build
       selected-test-script: test:selected
@@ -162,14 +162,14 @@ This repo is also a Claude Code plugin marketplace. The `fwd` plugin carries the
 every project's agents share, so each repo runs the same review gate instead of its own copy.
 
 ```sh
-/plugin install fwd --marketplace HartiganHM/fwd-stack
+/plugin install fwd --marketplace featherweight-design/fwd-stack
 ```
 
 That one-step form needs Claude Code 2.1.275 or later. On an earlier version, add the
 marketplace first:
 
 ```sh
-/plugin marketplace add HartiganHM/fwd-stack
+/plugin marketplace add featherweight-design/fwd-stack
 /plugin install fwd@fwd-stack
 ```
 

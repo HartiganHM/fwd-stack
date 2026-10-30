@@ -1,7 +1,7 @@
 # fwd-stack: agent notes
 
 The shared configs, CI gate and version baseline for Concert Crawl (`HartiganHM/concert-crawl`)
-and The 99 (`HartiganHM/the-99`). Design doc: https://claude.ai/artifact/Tah89KVLvYZKj7cATrYzwZ
+and The 99 (`featherweight-design/the-99`). Design doc: https://claude.ai/artifact/Tah89KVLvYZKj7cATrYzwZ
 
 - pnpm only. Gate before every push: `pnpm format:check && pnpm typecheck && pnpm lint`. No tests
   locally; CI is the only test gate (`pr-review` skill, §5).

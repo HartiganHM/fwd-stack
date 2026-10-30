@@ -124,7 +124,7 @@ fi
 
 # 2. Install the plugin from its GitHub marketplace, or bring an existing install up to date.
 if ! claude plugin marketplace list 2>/dev/null | grep -q 'fwd-stack'; then
-  run "claude plugin marketplace add HartiganHM/fwd-stack"
+  run "claude plugin marketplace add featherweight-design/fwd-stack"
 else
   run "claude plugin marketplace update fwd-stack"
 fi

@@ -4,6 +4,6 @@
   "version": "0.1.13",
   "description": "Shared review, delivery and orchestration skills and their guard hooks.",
   "author": { "name": "HartiganHM", "url": "https://github.com/HartiganHM" },
-  "repository": "https://github.com/HartiganHM/fwd-stack",
+  "repository": "https://github.com/featherweight-design/fwd-stack",
   "license": "MIT"
 }

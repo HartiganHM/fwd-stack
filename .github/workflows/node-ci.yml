@@ -2,7 +2,7 @@
 #
 #   jobs:
 #     gate:
-#       uses: HartiganHM/fwd-stack/.github/workflows/node-ci.yml@main
+#       uses: featherweight-design/fwd-stack/.github/workflows/node-ci.yml@main
 #       with:
 #         scripts: typecheck lint test build
 #         build-env: |
