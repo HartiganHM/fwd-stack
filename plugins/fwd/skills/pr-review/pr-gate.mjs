@@ -398,6 +398,10 @@ const docSynced = parseDocSync(prData.body);
 // gate prints it, and a later reader can see why the bar was one round.
 const humanReview = /^##\s+Reviewed by\s+(.+?)\s*$/im.exec(prData.body ?? '');
 const humanReviewer = humanReview?.[1]?.trim() || null;
+// OWNER RULING 2026-10-30: when the org's monthly Copilot AI-credit budget is exhausted, reviews stop
+// landing, and code PRs merge on green CI with no round until it resets. The PR body records it under
+// `## Copilot budget stop` (one line: the date and the failed request). Every use is printed.
+const budgetStop = /^##\s+Copilot budget stop\s*$/im.test(prData.body ?? '');
 
 // ---- destructive paths -------------------------------------------------------
 // §8 gives these clean-after-clean and NOTHING relaxes that — not doc-only, not
@@ -446,6 +450,40 @@ const destructivePaths = files
   )
   .map((f) => f.filename);
 const destructive = destructivePaths.length > 0;
+
+// OWNER RULING 2026-10-30: Copilot reviews only RISKY code PRs, one round at Lite effort. Risky means
+// the diff is destructive (above) or touches a path where a defect costs data, money or access:
+// migrations and schema, the DB layer, auth/session/proxy, payments/credits/billing, API routes, or
+// security code. Every other code PR takes a Claude review instead, recorded in the PR body under
+// `## Claude review`, and merges on green CI.
+const RISKY_PATH =
+  /(^|\/)(drizzle|migrations?|prisma|db|schemas?)(\/|\.)|(^|\/)(auth|oauth|session|security|crypto|tokens?|secrets?|passwords?|csrf|jwt|encrypt\w*|billing|payments?|credits?|stripe|webhooks?)(\/|[-_.])|(^|\/)(proxy|middleware)\.[jt]s$|(^|\/)(app|pages)\/api\/|(^|\/)routes?\//i;
+const riskyPaths = files
+  // A rename OUT of a risky path still touches it.
+  .flatMap((f) => [f.filename, f.previous_filename].filter(Boolean))
+  .filter(
+    (p) =>
+      !isDoc(p) &&
+      !nonRuntime.has(p) &&
+      !/\.(test|spec)\.[cm]?[jt]sx?$/.test(p) &&
+      RISKY_PATH.test(p),
+  );
+const risky = destructive || riskyPaths.length > 0;
+const claudeReviewed = /^##\s+Claude review\b/im.test(prData.body ?? '');
+// Test, probe, script or copy-only PRs take no review at all, like doc-only ones (owner ruling 2026-10-30).
+// Narrower than isTooling: no package.json, lockfile or CI config (a dependency bump is code), and a
+// probe counts only as a directory, never a runtime path that happens to say "probe".
+const isTestOrScript = (p) =>
+  p.startsWith('scripts/') ||
+  /(^|\/)(tests?|__tests__|e2e|probes?)\//.test(p) ||
+  /\.(test|spec)\.[cm]?[jt]sx?$/.test(p);
+const noReview =
+  !risky &&
+  files.every(
+    (f) =>
+      isTestOrScript(f.filename) || isCopyPath(f.filename) || isDoc(f.filename),
+  ) &&
+  files.some((f) => isTestOrScript(f.filename) || isCopyPath(f.filename));
 
 // Errored rounds are skipped when finding the round that first flagged a file,
 // the same as everywhere else they are scored.
@@ -818,12 +856,42 @@ const copyOnlyRound = copyOnly(scored, cleanStreak, isCopy, isDeclined);
 const humanReviewApplies = Boolean(humanReviewer) && !destructive;
 
 // A destructive path never takes a lowered bar: clean-after-clean, whatever else applies (§8).
-const needed =
-  !destructive &&
-  (docOnly || copyOnlyRound || humanReviewApplies || diminishing)
-    ? 1
-    : 2;
-const barMet = cleanStreak >= needed;
+// A doc-only PR takes no Copilot round at all (§9, owner ruling 2026-10-30): it merges on green CI.
+const needed = destructive
+  ? 2
+  : docOnly
+    ? 0
+    : copyOnlyRound || humanReviewApplies || diminishing
+      ? 1
+      : 2;
+// OWNER RULING 2026-10-30: ONE Copilot round per code PR. Copilot review is billed per review to
+// the org's AI credits, and Hugh judged confirmation rounds not worth their cost. A code PR meets the
+// bar once it has one scored round (any result): the agent fixes every valid finding and merges on
+// green CI. A doc-only PR takes none (§9). `needed` and the clean streak are still printed for
+// context, but they no longer decide the bar.
+const barMet =
+  (docOnly && !destructive) ||
+  noReview ||
+  (budgetStop && (!risky || claudeReviewed))
+    ? true
+    : risky
+      ? scored.length >= 1
+      : claudeReviewed || scored.length >= 1;
+say(
+  true,
+  'copilot scope     ',
+  risky
+    ? `RISKY: ${riskyPaths.slice(0, 4).join(', ') || 'destructive diff'}; one Copilot round`
+    : docOnly || noReview
+      ? 'doc/test/script/copy-only: no review'
+      : `not risky: Claude review${claudeReviewed ? ' recorded' : ' needed'}, no Copilot`,
+);
+if (budgetStop)
+  say(
+    false,
+    'budget stop      ',
+    '`## Copilot budget stop` in the body: merging with no Copilot round (owner ruling 2026-10-30)',
+  );
 // §7's hard stop, computed here rather than only reported below, because it is
 // a third door out of the merge bar and not merely a warning.
 //
@@ -896,7 +964,15 @@ say(
   barMet || softFixed || hardStopReleases,
   'merge bar        ',
   barMet
-    ? `${cleanStreak} successful round(s) trailing, need ${needed} §8`
+    ? (docOnly && !destructive) || noReview
+      ? 'doc, test, script or copy-only: no review round needed (owner ruling 2026-10-30)'
+      : budgetStop
+        ? 'Copilot budget stop recorded: merging on green CI'
+        : risky
+          ? `risky PR: ${scored.length} Copilot round(s), one required (owner ruling 2026-10-30)`
+          : claudeReviewed
+            ? 'not risky: Claude review recorded (owner ruling 2026-10-30)'
+            : `not risky: ${scored.length} Copilot round(s) already ran, which also meets the bar`
     : softFixed
       ? `round ${last.n} was soft-only and you have pushed past it — §5 says merge without another round`
       : hardStop && destructive
@@ -1070,9 +1146,14 @@ if (action === 'merge') {
       'hard stop on a destructive path: requesting has ended, but this diff deletes or overwrites ' +
         'user data, so the merge waits for the user to confirm it (§8).',
     );
-  } else if (!barMet && !softFixed && !hardStop) {
+  } else if (!barMet) {
     blocks.push(
-      `bar not met: ${cleanStreak} clean round(s), need ${needed}. Last SCORED round ` +
+      (risky
+        ? `bar not met: risky code PR (${riskyPaths.slice(0, 3).join(', ') || 'destructive diff'}) takes exactly one ` +
+          `Copilot round (owner ruling 2026-10-30); request it, fix what it finds, then merge.`
+        : 'bar not met: not a risky PR, so no Copilot. Run a Claude review (/code-review on the diff), fix ' +
+          'what it finds, record it under `## Claude review` in the PR body, then merge on green CI.') +
+        ` Clean streak ${cleanStreak}. Last SCORED round ` +
         `(${lastScored ? `#${lastScored.n}` : 'none'}) landed on ` +
         `${lastScored?.paths.join(', ') || 'no findings'}.` +
         (last?.errored
@@ -1085,6 +1166,24 @@ if (action === 'merge') {
 
 if (action === 'rerequest') {
   console.log('');
+  if (!risky && !(docOnly && !destructive) && !noReview) {
+    blocks.push(
+      'not a risky PR (no DB, migration, auth, payments, API-route or security path), so no Copilot ' +
+        '(owner ruling 2026-10-30). Run a Claude review, record it under `## Claude review`, merge on green CI.',
+    );
+  }
+  if (risky && scored.length >= 1) {
+    blocks.push(
+      'one Copilot round per code PR (owner ruling 2026-10-30): this PR has had its round. Fix every valid ' +
+        'finding and merge on green CI; do not request another.',
+    );
+  }
+  if ((docOnly && !destructive) || noReview) {
+    blocks.push(
+      'doc-only PR (design, docs, plans, briefs, READMEs): never request Copilot on it (§9, owner ruling ' +
+        '2026-10-30). Fix what you find yourself and merge on green CI.',
+    );
+  }
   if (unpushed) {
     blocks.push(
       'your local branch is ahead of the PR head — the push did not land, so a review now ' +

@@ -8,6 +8,28 @@ description: Use when running a GitHub Copilot review cycle on a pull request �
 **First, read the project's own rules.** If `.claude/fwd/pr-review.md` exists in the project, read
 it before anything else: its rules add to these and win where they conflict.
 
+## Owner ruling, 2026-10-30: Copilot only where it pays. This overrides §1, §5, §7 and §8 below
+
+Copilot review is billed per review to the org's AI credits. Measured on the-99: about $1.35 per
+review at Balanced and 4,228 reviews in October. The org now runs Lite effort with a $75 monthly
+budget and a hard stop. So:
+
+| PR kind                                                                                                                                    | Review                                                                                                                                                                 | Merge bar                     |
+| ------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| **Risky code**: destructive diff, migrations/schema, DB layer, auth/session/proxy, payments/credits/billing/webhooks, API routes, security | **One Copilot round.** Fix every valid finding. No confirmation rounds, no re-requests.                                                                                | 1 scored round + green CI     |
+| **Other code**                                                                                                                             | **Claude review, no Copilot.** Run `/code-review` on the PR diff, fix what it finds, and record it in the PR body under `## Claude review` (what ran, what was fixed). | `## Claude review` + green CI |
+| **Doc, design, test, probe, script or copy-only**                                                                                          | None. Read your own diff.                                                                                                                                              | Green CI                      |
+
+- The gate classifies the PR (`copilot scope` line) and enforces this table. It refuses a second
+  Copilot request on a risky PR, and any request on a non-risky one.
+- **Budget stop.** When reviews stop landing because the monthly budget is spent, write
+  `## Copilot budget stop` in the PR body (the date and the failed request), then merge risky PRs on
+  green CI after a Claude review. No retry loops. The budget resets on the 1st.
+- Only on featherweight-design repos. A repo owned by a personal account bills the member's own
+  license, so Copilot stays off there entirely.
+- The rest of this document still governs how to read and triage a round: staleness, findings,
+  sweeping a class, `## Settled`, PR structure.
+
 Canonical policy for GitHub Copilot review cycles and PR structure.
 
 **This skill governs whether the code was read. It does not, and cannot, tell you
@@ -673,7 +695,12 @@ Briefs, specs, plans, property tables, trackers, READMEs — anything with no
 runtime. The gate also counts a script edit whose every changed line is a comment, and a
 `plugin.json` or `package.json` change to the top-level `version` alone, as having none.
 
-- **One round, fix everything valid it returns, merge.** No verification round.
+- **No Copilot round at all.** Owner ruling, 2026-10-30: never request a Copilot
+  review on a design or documentation PR. Copilot is billed per review, and a doc PR
+  buys the least from it. Read the diff yourself, fix what is wrong, and merge on
+  green CI. The gate sets the bar to zero rounds and refuses the request.
+- The bullets below date from when doc PRs took one round. They still describe how
+  carefully to read your own doc diff before merging.
 - **Unless a round returns a factual error** in a spec, brief or property table —
   a missing enum case, an evidence table that doesn't support its own claim, a
   brief describing a route's behaviour wrongly. Those cost a design round later.
