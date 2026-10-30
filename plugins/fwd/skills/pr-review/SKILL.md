@@ -673,7 +673,12 @@ Briefs, specs, plans, property tables, trackers, READMEs — anything with no
 runtime. The gate also counts a script edit whose every changed line is a comment, and a
 `plugin.json` or `package.json` change to the top-level `version` alone, as having none.
 
-- **One round, fix everything valid it returns, merge.** No verification round.
+- **No Copilot round at all.** Owner ruling, 2026-10-30: never request a Copilot
+  review on a design or documentation PR. Copilot is billed per review, and a doc PR
+  buys the least from it. Read the diff yourself, fix what is wrong, and merge on
+  green CI. The gate sets the bar to zero rounds and refuses the request.
+- The bullets below date from when doc PRs took one round. They still describe how
+  carefully to read your own doc diff before merging.
 - **Unless a round returns a factual error** in a spec, brief or property table —
   a missing enum case, an evidence table that doesn't support its own claim, a
   brief describing a route's behaviour wrongly. Those cost a design round later.

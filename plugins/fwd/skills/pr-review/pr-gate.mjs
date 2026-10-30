@@ -818,11 +818,14 @@ const copyOnlyRound = copyOnly(scored, cleanStreak, isCopy, isDeclined);
 const humanReviewApplies = Boolean(humanReviewer) && !destructive;
 
 // A destructive path never takes a lowered bar: clean-after-clean, whatever else applies (§8).
-const needed =
-  !destructive &&
-  (docOnly || copyOnlyRound || humanReviewApplies || diminishing)
-    ? 1
-    : 2;
+// A doc-only PR takes no Copilot round at all (§9, owner ruling 2026-10-30): it merges on green CI.
+const needed = destructive
+  ? 2
+  : docOnly
+    ? 0
+    : copyOnlyRound || humanReviewApplies || diminishing
+      ? 1
+      : 2;
 const barMet = cleanStreak >= needed;
 // §7's hard stop, computed here rather than only reported below, because it is
 // a third door out of the merge bar and not merely a warning.
@@ -1085,6 +1088,12 @@ if (action === 'merge') {
 
 if (action === 'rerequest') {
   console.log('');
+  if (docOnly && !destructive) {
+    blocks.push(
+      'doc-only PR (design, docs, plans, briefs, READMEs): never request Copilot on it (§9, owner ruling ' +
+        '2026-10-30). Fix what you find yourself and merge on green CI.',
+    );
+  }
   if (unpushed) {
     blocks.push(
       'your local branch is ahead of the PR head — the push did not land, so a review now ' +
