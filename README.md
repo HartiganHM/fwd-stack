@@ -93,10 +93,15 @@ selected script must exist: it runs without `--if-present`, so a misspelt name f
 of passing without running a test. With the input empty, the workflow runs exactly as it always has.
 
 How a project selects is its own business. The script reads `CI_BASE_REF`. The simplest form is
-Vitest's own:
+Vitest's own. A change that touches no test, such as a README edit, selects none, and Vitest exits 1
+on an empty run unless it is told not to:
 
 ```json
-{ "scripts": { "test:selected": "vitest run --changed \"$CI_BASE_REF\"" } }
+{
+  "scripts": {
+    "test:selected": "vitest run --changed \"$CI_BASE_REF\" --passWithNoTests"
+  }
+}
 ```
 
 An import graph cannot see a test that reads files instead of importing them, such as a guard that
