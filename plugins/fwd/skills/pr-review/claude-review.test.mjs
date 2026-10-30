@@ -40,6 +40,11 @@ for (const placeholder of [
   '- [ ] pending',
   'Pending: cavecrew-reviewer on the diff',
   '<!-- reviewer -->\nTBD',
+  // A placeholder anywhere in the section, not only at its start.
+  'cavecrew-reviewer: TBD',
+  'Reviewer: n/a',
+  'The review is pending.',
+  'None yet, will run after CI.',
 ]) {
   test(`a placeholder section is not a record: ${JSON.stringify(placeholder)}`, () => {
     assert.equal(claudeReviewState(body(placeholder)).recorded, false);
@@ -86,6 +91,22 @@ test('a sub-heading inside the section stays in it', () => {
   );
   assert.equal(
     claudeReviewState(body('### Findings\n\n(pending)')).recorded,
+    false,
+  );
+});
+
+test('a bare ### line does not swallow the record under it', () => {
+  assert.equal(
+    claudeReviewState(body('###\ncavecrew-reviewer: no findings.')).recorded,
+    true,
+  );
+});
+
+test('an h1 after the section ends it', () => {
+  assert.equal(
+    claudeReviewState(
+      'Summary.\n\n## Claude review\n\nn/a\n\n# Notes\n\nsome text\n',
+    ).recorded,
     false,
   );
 });

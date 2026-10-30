@@ -8,31 +8,42 @@
 // The rule, kept loose on purpose because real records are short ("cavecrew-reviewer: no
 // findings.", "One-sentence revert to the exact text of #N; no logic change."):
 //   - the section is the heading line's own text after "Claude review" plus everything up to the
-//     next `## ` heading, with HTML comments, sub-heading lines (`### Findings`), markdown markup
-//     and punctuation removed;
-//   - it is NOT a record when nothing is left, when all that is left is a placeholder
-//     (n/a, none yet, not run yet, coming, later, placeholder), or when it opens with
-//     pending, tbd, tba, todo, to do or wip ("Pending: cavecrew-reviewer" has not run yet);
-//   - anything else is a record.
+//     next `#` or `##` heading, with HTML comments and sub-heading lines (`### Findings`) removed;
+//   - it is split into clauses at . ; : , ! ? ( ) and dashes between words, each lowercased with
+//     markup and punctuation dropped;
+//   - it is NOT a record when no clause is left, when the first clause opens with pending, tbd,
+//     tba, todo, to do or wip ("Pending: cavecrew-reviewer"), or when ANY clause is only a
+//     placeholder ("Reviewer: n/a", "cavecrew-reviewer: TBD", "None yet, will run after CI",
+//     "The review is pending.");
+//   - anything else is a record, so a finding that mentions a pending state still counts.
 
-const HEADING = /^##\s+Claude review\b([^\n]*)$/im;
+const HEADING = /^##[ \t]+Claude review\b([^\n]*)$/im;
 
-const PLACEHOLDER_ONLY =
-  /^(?:n a|na|none yet|not yet run|not run yet|not yet|coming|coming soon|later|placeholder)$/;
 const PLACEHOLDER_OPENER = /^(?:pending|tbd|tba|todo|to do|wip)\b/;
+const PLACEHOLDER =
+  '(?:pending|tbd|tba|todo|to do|wip|n a|na|none yet|not yet run|not run yet|not yet|coming soon|placeholder)';
+// A clause that is a placeholder alone, or says something "is pending" / "still TBD".
+const PLACEHOLDER_CLAUSE = new RegExp(
+  `^(?:(?:.+ )?(?:is|are|still|is still) )?${PLACEHOLDER}$`,
+);
 
 /** The text a `## Claude review` record must hold, said where the gate refuses it. */
 export const RECORD_HINT =
   'write the reviewer and what it found, e.g. "cavecrew-reviewer: no findings." or ' +
   '"cavecrew-reviewer: 2 findings (1 Medium, 1 Low), both fixed."';
 
-const normalize = (text) =>
+const clauses = (text) =>
   text
     .replace(/<!--[\s\S]*?(?:-->|$)/g, ' ')
-    .replace(/^\s*#{3,}\s.*$/gm, ' ')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
+    .replace(/^[ \t]*#{3,}(?:[ \t].*)?$/gm, ' ')
+    .split(/[.;:,!?()\n]|\s[-–—]+\s/)
+    .map((c) =>
+      c
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim(),
+    )
+    .filter(Boolean);
 
 /**
  * `{ present, recorded }` for a PR body: `present` when a `## Claude review` heading exists,
@@ -42,11 +53,11 @@ export function claudeReviewState(body) {
   const text = body ?? '';
   const m = HEADING.exec(text);
   if (!m) return { present: false, recorded: false };
-  const rest = text.slice(m.index + m[0].length).split(/^##\s/m)[0];
-  const content = normalize(`${m[1]}\n${rest}`);
+  const rest = text.slice(m.index + m[0].length).split(/^#{1,2}[ \t]/m)[0];
+  const parts = clauses(`${m[1]}\n${rest}`);
   const recorded =
-    content !== '' &&
-    !PLACEHOLDER_ONLY.test(content) &&
-    !PLACEHOLDER_OPENER.test(content);
+    parts.length > 0 &&
+    !PLACEHOLDER_OPENER.test(parts[0]) &&
+    !parts.some((c) => PLACEHOLDER_CLAUSE.test(c));
   return { present: true, recorded };
 }
