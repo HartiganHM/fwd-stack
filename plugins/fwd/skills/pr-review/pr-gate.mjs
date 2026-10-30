@@ -28,6 +28,7 @@ import {
   parseDocSync,
   parseSettled,
 } from './settled.mjs';
+import { claudeReviewState, RECORD_HINT } from './claude-review.mjs';
 import {
   commentOnlyHunks,
   isCommentOnlyChange,
@@ -470,7 +471,11 @@ const riskyPaths = files
       RISKY_PATH.test(p),
   );
 const risky = destructive || riskyPaths.length > 0;
-const claudeReviewed = /^##\s+Claude review\b/im.test(prData.body ?? '');
+// The heading alone is not a review: a section that says only "(pending)", TBD or nothing does not
+// count (claude-review.mjs has the rule).
+const claudeReview = claudeReviewState(prData.body);
+const claudeReviewed = claudeReview.recorded;
+const claudePlaceholder = claudeReview.present && !claudeReview.recorded;
 // Test, probe, script or copy-only PRs take no review at all, like doc-only ones (owner ruling 2026-10-30).
 // Narrower than isTooling: no package.json, lockfile or CI config (a dependency bump is code), and a
 // probe counts only as a directory, never a runtime path that happens to say "probe".
@@ -885,7 +890,7 @@ say(
     ? `RISKY: ${riskyPaths.slice(0, 4).join(', ') || 'destructive diff'}; one Copilot round`
     : docOnly || noReview
       ? 'doc/test/script/copy-only: no review'
-      : `not risky: Claude review${claudeReviewed ? ' recorded' : ' needed'}, no Copilot`,
+      : `not risky: Claude review${claudeReviewed ? ' recorded' : claudePlaceholder ? ' heading is a placeholder, not a record' : ' needed'}, no Copilot`,
 );
 if (budgetStop)
   say(
@@ -1193,8 +1198,15 @@ if (action === 'merge') {
       (risky
         ? `bar not met: risky code PR (${riskyPaths.slice(0, 3).join(', ') || 'destructive diff'}) takes exactly one ` +
           `Copilot round (owner ruling 2026-10-30); request it, fix what it finds, then merge.`
-        : 'bar not met: not a risky PR, so no Copilot. Run a Claude review (/code-review on the diff), fix ' +
-          'what it finds, record it under `## Claude review` in the PR body, then merge on green CI.') +
+        : claudePlaceholder
+          ? 'bar not met: the `## Claude review` section is empty or a placeholder (pending, TBD, n/a), ' +
+            'which is not a record. Run the review, then ' +
+            RECORD_HINT +
+            '.'
+          : 'bar not met: not a risky PR, so no Copilot. Run a Claude review (the caveman:cavecrew-reviewer ' +
+            'agent on the diff), fix what it finds, record it under `## Claude review` in the PR body (' +
+            RECORD_HINT +
+            '), then merge on green CI.') +
         ` Clean streak ${cleanStreak}. Last SCORED round ` +
         `(${lastScored ? `#${lastScored.n}` : 'none'}) landed on ` +
         `${lastScored?.paths.join(', ') || 'no findings'}.` +
