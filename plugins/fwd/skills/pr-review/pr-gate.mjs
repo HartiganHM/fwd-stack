@@ -29,6 +29,7 @@ import {
   parseSettled,
 } from './settled.mjs';
 import { claudeReviewState, RECORD_HINT } from './claude-review.mjs';
+import { NOT_RISKY_TITLE, RISKY_PATH, riskOverride } from './risk-override.mjs';
 import {
   commentOnlyHunks,
   isCommentOnlyChange,
@@ -455,11 +456,12 @@ const destructive = destructivePaths.length > 0;
 
 // OWNER RULING 2026-10-30: Copilot reviews only RISKY code PRs, one round at Lite effort. Risky means
 // the diff is destructive (above) or touches a path where a defect costs data, money or access:
-// migrations and schema, the DB layer, auth/session/proxy, payments/credits/billing, API routes, or
-// security code. Every other code PR takes a Claude review instead, recorded in the PR body under
-// `## Claude review`, and merges on green CI.
-const RISKY_PATH =
-  /(^|\/)(drizzle|migrations?|prisma|db|schemas?)(\/|\.)|(^|\/)(auth|oauth|session|security|crypto|tokens?|secrets?|passwords?|csrf|jwt|encrypt\w*|billing|payments?|credits?|stripe|webhooks?)(\/|[-_.])|(^|\/)(proxy|middleware)\.[jt]s$|(^|\/)(app|pages)\/api\/|(^|\/)routes?\//i;
+// migrations and schema, the DB layer, auth/session/proxy, payments/credits/billing, API and cron
+// routes, or security code (RISKY_PATH, risk-override.mjs). Every other code PR takes a Claude review
+// instead, recorded in the PR body under `## Claude review`, and merges on green CI.
+// A path is not the rule: a display-only change to a credits file is not payments code. The PR body's
+// `## Risk: not risky` section, with a real reason, clears a path-risky PR, unless the diff carries a
+// hard-risky signal (risk-override.mjs, HARD_RISKY). Every declaration is printed, applied or not.
 const riskyPaths = files
   // A rename OUT of a risky path still touches it.
   .flatMap((f) => [f.filename, f.previous_filename].filter(Boolean))
@@ -470,7 +472,9 @@ const riskyPaths = files
       !/\.(test|spec)\.[cm]?[jt]sx?$/.test(p) &&
       RISKY_PATH.test(p),
   );
-const risky = destructive || riskyPaths.length > 0;
+const pathRisky = destructive || riskyPaths.length > 0;
+const override = riskOverride(prData.body, { riskyPaths, destructive });
+const risky = pathRisky && !override.applied;
 // The heading alone is not a review: a section that says only "(pending)", TBD or nothing does not
 // count (claude-review.mjs has the rule).
 const claudeReview = claudeReviewState(prData.body);
@@ -484,7 +488,7 @@ const isTestOrScript = (p) =>
   /(^|\/)(tests?|__tests__|e2e|probes?)\//.test(p) ||
   /\.(test|spec)\.[cm]?[jt]sx?$/.test(p);
 const noReview =
-  !risky &&
+  !pathRisky &&
   files.every(
     (f) =>
       isTestOrScript(f.filename) || isCopyPath(f.filename) || isDoc(f.filename),
@@ -890,8 +894,22 @@ say(
     ? `RISKY: ${riskyPaths.slice(0, 4).join(', ') || 'destructive diff'}; one Copilot round`
     : docOnly || noReview
       ? 'doc/test/script/copy-only: no review'
-      : `not risky: Claude review${claudeReviewed ? ' recorded' : claudePlaceholder ? ' heading is a placeholder, not a record' : ' needed'}, no Copilot`,
+      : `not risky${override.applied ? ` (declared under ${NOT_RISKY_TITLE})` : ''}: Claude review${claudeReviewed ? ' recorded' : claudePlaceholder ? ' heading is a placeholder, not a record' : ' needed'}, no Copilot`,
 );
+// One line per declaration, applied or ignored, so the month-end report can count them.
+const clip = (t) => (t.length > 140 ? `${t.slice(0, 137)}...` : t);
+if (override.applied)
+  say(
+    true,
+    'risk override     ',
+    `${NOT_RISKY_TITLE} APPLIED over ${riskyPaths.slice(0, 3).join(', ')}: "${clip(override.reason)}"`,
+  );
+else if (override.declared)
+  say(
+    true,
+    'risk override     ',
+    `${NOT_RISKY_TITLE} IGNORED: ${override.ignored}${override.reason ? ` (reason given: "${clip(override.reason)}")` : ''}`,
+  );
 if (budgetStop)
   say(
     false,
@@ -1203,7 +1221,7 @@ if (action === 'merge') {
             'which is not a record. Run the review, then ' +
             RECORD_HINT +
             '.'
-          : 'bar not met: not a risky PR, so no Copilot. Run a Claude review (the caveman:cavecrew-reviewer ' +
+          : `bar not met: ${override.applied ? `declared not risky under ${NOT_RISKY_TITLE}` : 'not a risky PR'}, so no Copilot. Run a Claude review (the caveman:cavecrew-reviewer ` +
             'agent on the diff), fix what it finds, record it under `## Claude review` in the PR body (' +
             RECORD_HINT +
             '), then merge on green CI.') +
@@ -1222,7 +1240,9 @@ if (action === 'rerequest') {
   console.log('');
   if (!risky && !(docOnly && !destructive) && !noReview) {
     blocks.push(
-      'not a risky PR (no DB, migration, auth, payments, API-route or security path), so no Copilot ' +
+      (override.applied
+        ? `declared not risky under \`${NOT_RISKY_TITLE}\`, so no Copilot `
+        : 'not a risky PR (no DB, migration, auth, payments, API-route or security path), so no Copilot ') +
         '(owner ruling 2026-10-30). Run a Claude review, record it under `## Claude review`, merge on green CI.',
     );
   }

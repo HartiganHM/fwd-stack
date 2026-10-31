@@ -22,6 +22,8 @@ budget and a hard stop. So:
 
 - The gate classifies the PR (`copilot scope` line) and enforces this table. It refuses a second
   Copilot request on a risky PR, and any request on a non-risky one.
+- **`## Risk: not risky`** (Hugh, 2026-10-30): risk is what the diff changes, not where it sits. A path-risky PR that only reads or displays (copy, UI, tests) gets this heading and one line of reason; the gate then wants a Claude review, no Copilot. When unsure, record the call there and default to a Claude review.
+  Ignored for destructive diffs, migrations/schema, API/cron routes, auth/session/middleware/proxy and webhooks (`HARD_RISKY`, `risk-override.mjs`). The `risk override` line prints each use for the month report.
 - **Budget stop.** When reviews stop landing because the monthly budget is spent, write
   `## Copilot budget stop` in the PR body (the date and the failed request), then merge risky PRs on
   green CI after a Claude review. No retry loops. The budget resets on the 1st.

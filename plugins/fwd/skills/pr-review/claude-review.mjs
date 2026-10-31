@@ -46,18 +46,37 @@ const clauses = (text) =>
     .filter(Boolean);
 
 /**
- * `{ present, recorded }` for a PR body: `present` when a `## Claude review` heading exists,
- * `recorded` when its section holds a real record (see the rule above).
+ * `{ present, recorded, text }` for the section a heading regex opens: `present` when the heading
+ * exists, `recorded` when its section holds a real record (the rule above), `text` the section's
+ * own words, trimmed. Group 1 of `heading` is the heading line's own text after the fixed words.
+ * Shared with risk-override.mjs, so a `## Risk: not risky` reason passes the same placeholder test.
  */
-export function claudeReviewState(body) {
+export function sectionState(body, heading) {
   const text = body ?? '';
-  const m = HEADING.exec(text);
-  if (!m) return { present: false, recorded: false };
+  const m = heading.exec(text);
+  if (!m) return { present: false, recorded: false, text: '' };
   const rest = text.slice(m.index + m[0].length).split(/^#{1,2}[ \t]/m)[0];
-  const parts = clauses(`${m[1]}\n${rest}`);
+  const own = `${m[1] ?? ''}\n${rest}`;
+  const parts = clauses(own);
   const recorded =
     parts.length > 0 &&
     !PLACEHOLDER_OPENER.test(parts[0]) &&
     !parts.some((c) => PLACEHOLDER_CLAUSE.test(c));
-  return { present: true, recorded };
+  return {
+    present: true,
+    recorded,
+    text: own
+      .replace(/<!--[\s\S]*?(?:-->|$)/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim(),
+  };
+}
+
+/**
+ * `{ present, recorded }` for a PR body: `present` when a `## Claude review` heading exists,
+ * `recorded` when its section holds a real record (see the rule above).
+ */
+export function claudeReviewState(body) {
+  const { present, recorded } = sectionState(body, HEADING);
+  return { present, recorded };
 }
