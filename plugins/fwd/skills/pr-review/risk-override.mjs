@@ -49,6 +49,10 @@ export const RISKY_PATH = new RegExp(
 
 // The signals a `## Risk: not risky` declaration cannot override. A destructive diff is the fifth,
 // read by the gate (pr-gate.mjs, DESTRUCTIVE) and passed in.
+// Payments, the DB layer and security paths are left out ON PURPOSE (owner ruling 2026-10-30): a file
+// there can be read-only or display-only, which is the case the declaration exists for. Clearing
+// one is the lane's written claim that the diff changes no charge, refund or write, and the gate
+// prints that claim; it cannot check it.
 export const HARD_RISKY = [
   { name: 'migration/schema', pattern: MIGRATION_SCHEMA },
   { name: 'API/cron route', pattern: ROUTES },
