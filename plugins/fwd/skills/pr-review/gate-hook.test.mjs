@@ -192,3 +192,39 @@ test('with no newest install the denial names the bundled gate', () => {
   const r = hook(`${M} 42 --repo o/r`);
   assert.ok(r.reason.includes(`(ran ${join(skill, 'pr-gate.mjs')})`), r.reason);
 });
+
+test('when the resolver is missing, the bundled gate still runs and denies', () => {
+  // A plugin copy with no gate-path.mjs: `node gate-path.mjs` fails, and the hook must fall back.
+  const bare = join(root, 'plugin-no-resolver');
+  const bareSkill = join(bare, 'skills', 'pr-review');
+  mkdirSync(bareSkill, { recursive: true });
+  mkdirSync(join(bare, 'lib'));
+  for (const f of ['gate-hook.sh', 'parse-command.mjs', 'pr-gate.mjs'])
+    copyFileSync(join(skill, f), join(bareSkill, f));
+  copyFileSync(
+    join(plugin, 'lib', 'is-main.mjs'),
+    join(bare, 'lib', 'is-main.mjs'),
+  );
+  const { home } = newestHome('home-no-resolver', 'process.exit(0);\n');
+  const env = { ...process.env, HOME: home };
+  delete env.GH_REPO;
+  const r = spawnSync('bash', [join(bareSkill, 'gate-hook.sh')], {
+    cwd: outside,
+    env,
+    encoding: 'utf8',
+    input: JSON.stringify({
+      cwd: outside,
+      tool_input: { command: `${M} 42 --repo o/r` },
+    }),
+  });
+  assert.equal(r.status, 0, r.stderr);
+  const out = JSON.parse(r.stdout).hookSpecificOutput;
+  assert.equal(out.permissionDecision, 'deny');
+  assert.match(out.permissionDecisionReason, /STUB/);
+  assert.ok(
+    out.permissionDecisionReason.includes(
+      `(ran ${join(bareSkill, 'pr-gate.mjs')})`,
+    ),
+    out.permissionDecisionReason,
+  );
+});

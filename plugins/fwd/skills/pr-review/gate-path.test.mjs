@@ -92,6 +92,23 @@ test('a link whose gate file is missing falls back to the bundled gate', () => {
   assert.equal(resolveGate(at('0.1.13'), h), at('0.1.13'));
 });
 
+test('a version that cannot be compared with the bundled one keeps the bundled gate', () => {
+  const { h, at } = home({
+    versions: ['0.1.16', '0.1.17-rc'],
+    link: (_, c) => join(c, '0.1.17-rc'),
+  });
+  assert.equal(resolveGate(at('0.1.16'), h), at('0.1.16'));
+});
+
+test("another marketplace's fwd install is not trusted over the bundled one", () => {
+  const { h, cache, at } = home({ versions: ['0.1.13'] });
+  const other = join(cache, '..', '..', 'elsewhere', 'fwd', '9.9.9');
+  mkdirSync(join(other, 'skills', 'pr-review'), { recursive: true });
+  writeFileSync(join(other, GATE), '');
+  symlinkSync(other, join(h, '.claude', 'fwd'));
+  assert.equal(resolveGate(at('0.1.13'), h), at('0.1.13'));
+});
+
 test('compareVersions orders dotted numbers and refuses anything else', () => {
   assert.equal(compareVersions('0.1.9', '0.1.16'), -1);
   assert.equal(compareVersions('0.1.16', '0.1.16'), 0);

@@ -9,14 +9,6 @@
 # reasoning in the denial so the next step is obvious rather than a mystery.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# Run the NEWEST installed gate, resolved now rather than when the session loaded its hooks, so a
-# gate fix reaches a running session without /reload-plugins. gate-path.mjs only trusts
-# ~/.claude/fwd when it resolves into the fwd plugin cache; otherwise, or if it fails, the gate
-# bundled beside this script runs. Either way a gate runs, and a gate that crashes or cannot load
-# exits non-zero, which denies below: this never fails open.
-bundled="$here/pr-gate.mjs"
-gate=$(node "$here/gate-path.mjs" "$bundled" 2>/dev/null) || gate="$bundled"
-[ -n "$gate" ] && [ -f "$gate" ] || gate="$bundled"
 payload=$(cat)
 cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // ""')
 # The session's working directory, where a relative `cd` in the command starts from.
@@ -57,6 +49,16 @@ if printf '%s\n' "$gated" | grep -qx 'unreadable'; then
   }'
   exit 0
 fi
+
+# Run the NEWEST installed gate, resolved now rather than when the session loaded its hooks, so a
+# gate fix reaches a running session without /reload-plugins. gate-path.mjs only trusts
+# ~/.claude/fwd when it resolves into the fwd plugin cache; otherwise, or if it fails, the gate
+# bundled beside this script runs. Either way a gate runs, and a gate that crashes or cannot load
+# exits non-zero, which denies below: this never fails open. Resolved only once a command is
+# gated, so ungated calls pay nothing.
+bundled="$here/pr-gate.mjs"
+gate=$(node "$here/gate-path.mjs" "$bundled" 2>/dev/null) || gate="$bundled"
+[ -n "$gate" ] && [ -f "$gate" ] || gate="$bundled"
 
 # Where the gated commands run: `cd <dir>`, `cd?` (unknown), or neither (the session's directory).
 run_dir=""

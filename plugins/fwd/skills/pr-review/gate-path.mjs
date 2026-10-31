@@ -8,7 +8,7 @@
 //
 // The link is only trusted when it really resolves into the fwd plugin cache. Anything else (no
 // link, a link into a checkout, a link to an OLDER version than the one bundled with this
-// session) falls back to the bundled gate. Either way a gate runs, so the hook stays closed.
+// session, or to another marketplace's install) falls back to the bundled gate. Either way a gate runs, so the hook stays closed.
 //
 //   node gate-path.mjs <bundled pr-gate.mjs>   prints the path to run
 import { existsSync, realpathSync } from 'node:fs';
@@ -19,14 +19,14 @@ import { isMain } from '../../lib/is-main.mjs';
 
 const GATE = ['skills', 'pr-review', 'pr-gate.mjs'];
 
-// The version folder of a gate inside the plugin cache, or null when it is not in there:
+// The marketplace and version folder of a gate inside the plugin cache, or null when it is not in there:
 // <cache>/<marketplace>/fwd/<version>/skills/pr-review/pr-gate.mjs.
-function cacheVersion(real, cache) {
+function cacheEntry(real, cache) {
   const parts = relative(cache, real).split(sep);
   if (parts.length !== 6 || parts[0] === '..' || parts[0] === '') return null;
   if (parts[1] !== 'fwd') return null;
   if (parts.slice(3).join('/') !== GATE.join('/')) return null;
-  return parts[2];
+  return { marketplace: parts[0], version: parts[2] };
 }
 
 // -1, 0 or 1 for two dotted numeric versions; null when either is not one.
@@ -47,13 +47,18 @@ export function resolveGate(bundled, home = homedir()) {
     if (!existsSync(link)) return bundled;
     const real = realpathSync(link);
     const cache = realpathSync(join(home, '.claude', 'plugins', 'cache'));
-    const newest = cacheVersion(real, cache);
+    const newest = cacheEntry(real, cache);
     if (newest === null) return bundled;
-    // Never step back: a session already on a newer version than the link keeps its own gate.
     const own = existsSync(bundled)
-      ? cacheVersion(realpathSync(bundled), cache)
+      ? cacheEntry(realpathSync(bundled), cache)
       : null;
-    if (own !== null && compareVersions(newest, own) === -1) return bundled;
+    if (own !== null) {
+      // Same install only, and never step back: a session already on a newer version than the
+      // link keeps its own gate, and so does one whose versions cannot be compared.
+      if (newest.marketplace !== own.marketplace) return bundled;
+      const order = compareVersions(newest.version, own.version);
+      if (order === null || order === -1) return bundled;
+    }
     return real;
   } catch {
     return bundled;
