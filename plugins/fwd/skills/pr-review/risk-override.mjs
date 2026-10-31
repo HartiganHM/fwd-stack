@@ -1,0 +1,108 @@
+// Which paths make a PR risky, and the PR body's declaration that a path-risky PR is not.
+//
+// Split out of pr-gate.mjs so the rule can be tested without GitHub (the gate runs on import).
+//
+// WHY. The owner's rule (2026-10-30) is that a PR is risky only when its diff CHANGES writes or
+// behaviour in the DB or migrations, auth, payment charging or refunds, API or cron routes,
+// security, or anything destructive. Reading or displaying payment data, copy, UI and tests are not
+// risky, whatever folder the files sit in. The gate can only read paths, so a display-only change to
+// a `credits` model or a `credits` copy file read as payments code and demanded a Copilot round.
+//
+// THE OVERRIDE. The lane that knows what the diff does writes a `## Risk: not risky` section in
+// the PR body, giving the reason. When the reason is real (the same placeholder test as
+// `## Claude review`, claude-review.mjs), a path-risky PR is treated as not risky: it takes a
+// recorded Claude review and no Copilot. The override is IGNORED, and the PR stays risky, when the
+// diff carries a hard-risky signal (HARD_RISKY below, or a destructive diff): there a wrong
+// declaration costs data, money or access, so a lane's word is not enough.
+
+import { sectionState } from './claude-review.mjs';
+
+// ---- risky paths -------------------------------------------------------------
+// Each part is named so HARD_RISKY can reuse it. RISKY_PATH is their union.
+const MIGRATION_SCHEMA = /(^|\/)(drizzle|migrations?|prisma|schemas?)(\/|\.)/i;
+const DB_LAYER = /(^|\/)db(\/|\.)/i;
+const AUTH_SESSION =
+  /(^|\/)(auth|oauth|session)(\/|[-_.])|(^|\/)(proxy|middleware)\.[jt]s$/i;
+const SECURITY =
+  /(^|\/)(security|crypto|tokens?|secrets?|passwords?|csrf|jwt|encrypt\w*)(\/|[-_.])/i;
+const PAYMENTS = /(^|\/)(billing|payments?|credits?|stripe)(\/|[-_.])/i;
+const WEBHOOKS = /(^|\/)webhooks?(\/|[-_.])/i;
+// API and cron route handlers: an `api/` tree, a `routes/` or `cron/` folder, or a Next.js
+// `route.ts` handler file.
+const ROUTES =
+  /(^|\/)(app|pages)\/api\/|(^|\/)(routes?|crons?)\/|(^|\/)route\.[cm]?[jt]s$/i;
+
+export const RISKY_PATH = new RegExp(
+  [
+    MIGRATION_SCHEMA,
+    DB_LAYER,
+    AUTH_SESSION,
+    SECURITY,
+    PAYMENTS,
+    WEBHOOKS,
+    ROUTES,
+  ]
+    .map((r) => r.source)
+    .join('|'),
+  'i',
+);
+
+// The signals a `## Risk: not risky` declaration cannot override. A destructive diff is the fifth,
+// read by the gate (pr-gate.mjs, DESTRUCTIVE) and passed in.
+export const HARD_RISKY = [
+  { name: 'migration/schema', pattern: MIGRATION_SCHEMA },
+  { name: 'API/cron route', pattern: ROUTES },
+  { name: 'auth/session/middleware/proxy', pattern: AUTH_SESSION },
+  { name: 'webhook', pattern: WEBHOOKS },
+];
+
+/** The heading lanes write, exactly. */
+export const NOT_RISKY_TITLE = '## Risk: not risky';
+const NOT_RISKY_HEADING = /^##[ \t]+Risk:[ \t]*not risky\b([^\n]*)$/im;
+
+/** The hard-risky signals in a PR: `destructive diff`, or `<name>: <path>` per matching path. */
+export function hardRiskySignals(paths, destructive) {
+  const signals = destructive ? ['destructive diff'] : [];
+  for (const p of paths) {
+    const hit = HARD_RISKY.find(({ pattern }) => pattern.test(p));
+    if (hit) signals.push(`${hit.name}: ${p}`);
+  }
+  return signals;
+}
+
+/**
+ * What the PR body's `## Risk: not risky` section does to a PR the paths call risky.
+ * `riskyPaths` are the gate's risky runtime paths (tests, docs and non-runtime files already
+ * dropped); `destructive` is whether the diff is destructive.
+ *
+ * Returns `{ declared, applied, reason, ignored, signals }`: `declared` when the heading exists,
+ * `applied` when the PR is to be treated as not risky, `reason` the section's text, and `ignored`
+ * the reason a declaration did not apply (null when it applied or was never made).
+ */
+export function riskOverride(body, { riskyPaths, destructive }) {
+  const s = sectionState(body, NOT_RISKY_HEADING);
+  const none = {
+    declared: false,
+    applied: false,
+    reason: '',
+    ignored: null,
+    signals: [],
+  };
+  if (!s.present) return none;
+  const base = { ...none, declared: true, reason: s.text };
+  if (!s.recorded)
+    return {
+      ...base,
+      ignored: 'the reason is empty or a placeholder (pending, TBD, n/a)',
+    };
+  if (!destructive && riskyPaths.length === 0)
+    return { ...base, ignored: 'not needed: no risky path in this diff' };
+  const signals = hardRiskySignals(riskyPaths, destructive);
+  if (signals.length > 0)
+    return {
+      ...base,
+      signals,
+      ignored: `hard-risky signal (${signals.slice(0, 3).join(', ')}); a declaration cannot clear it`,
+    };
+  return { ...base, applied: true };
+}
