@@ -8,9 +8,15 @@
 # Denies the tool call when pr-gate.mjs exits non-zero, and puts the gate's own
 # reasoning in the denial so the next step is obvious rather than a mystery.
 set -uo pipefail
-# The gate sits beside this script, wherever the plugin is installed.
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-gate="$here/pr-gate.mjs"
+# Run the NEWEST installed gate, resolved now rather than when the session loaded its hooks, so a
+# gate fix reaches a running session without /reload-plugins. gate-path.mjs only trusts
+# ~/.claude/fwd when it resolves into the fwd plugin cache; otherwise, or if it fails, the gate
+# bundled beside this script runs. Either way a gate runs, and a gate that crashes or cannot load
+# exits non-zero, which denies below: this never fails open.
+bundled="$here/pr-gate.mjs"
+gate=$(node "$here/gate-path.mjs" "$bundled" 2>/dev/null) || gate="$bundled"
+[ -n "$gate" ] && [ -f "$gate" ] || gate="$bundled"
 payload=$(cat)
 cmd=$(printf '%s' "$payload" | jq -r '.tool_input.command // ""')
 # The session's working directory, where a relative `cd` in the command starts from.
@@ -59,16 +65,20 @@ printf '%s\n' "$gated" | grep -x 'cd?' >/dev/null && dir_unknown=1
 run_dir=$(printf '%s\n' "$gated" | sed -n 's/^cd //p' | head -n 1)
 
 out=""
+ran=""
 status=0
 while read -r action pr repo; do
   [ -z "${pr:-}" ] && continue
   case "$action" in merge | rerequest) ;; *) continue ;; esac
+  ran=""
   if [ -n "${repo:-}" ]; then
     # The command names its repository, so that decides, wherever the command runs. The gate
     # still starts in the command's own directory when it exists, for its push-landed check.
     if [ -n "$run_dir" ] && [ -d "$run_dir" ]; then
+      ran=$gate
       out=$(cd "$run_dir" && node "$gate" "$pr" --action "$action" --repo "$repo" 2>&1)
     else
+      ran=$gate
       out=$(node "$gate" "$pr" --action "$action" --repo "$repo" 2>&1)
     fi
   elif [ $dir_unknown -eq 1 ]; then
@@ -76,12 +86,14 @@ while read -r action pr repo; do
     false
   elif [ -n "$run_dir" ]; then
     if [ -d "$run_dir" ]; then
+      ran=$gate
       out=$(cd "$run_dir" && node "$gate" "$pr" --action "$action" 2>&1)
     else
       out="the command runs in $run_dir, which does not exist, so the gate cannot tell which repository PR #$pr is in. Name it in the command: --repo owner/name."
       false
     fi
   else
+    ran=$gate
     out=$(node "$gate" "$pr" --action "$action" 2>&1)
   fi
   status=$?
@@ -89,11 +101,12 @@ while read -r action pr repo; do
 done <<<"$gated"
 [ $status -eq 0 ] && exit 0
 
-jq -nc --arg reason "$out" '{
+# Name the gate that ran, so a denial from a stale or unexpected copy is easy to spot.
+jq -nc --arg reason "$out" --arg ran "$ran" '{
   hookSpecificOutput: {
     hookEventName: "PreToolUse",
     permissionDecision: "deny",
-    permissionDecisionReason: ("pr-review gate:\n" + $reason)
+    permissionDecisionReason: ("pr-review gate" + (if $ran == "" then "" else " (ran " + $ran + ")" end) + ":\n" + $reason)
   }
 }'
 exit 0
