@@ -80,6 +80,9 @@ line itself, and **fails closed**: a command that mentions a merge it cannot att
 denied with the plain form to use, `gh pr merge <number> [--repo owner/name]`. A repository the
 command names (`--repo`, `-R`, an API path) always decides. One that names none is resolved in the
 directory a plain `cd <path>` takes it to, and outside any checkout it is denied. That is deliberate.
+The hook runs the newest installed gate (`~/.claude/fwd`, when it links into the plugin cache), so
+a gate fix reaches running sessions without `/reload-plugins`; a session loaded before 0.1.16 needs
+one reload to pick up that delegation. A denial names the gate path that ran.
 Every rule here was written after a real cost, and then the person who wrote
 them broke three of them in a single PR — merged one eight rounds after its bar
 was met, patched one surface for three consecutive rounds instead of deciding,
